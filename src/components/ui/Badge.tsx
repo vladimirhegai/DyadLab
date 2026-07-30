@@ -2,13 +2,14 @@ import type { ReactNode } from "react";
 
 interface BadgeProps {
   children: ReactNode;
-  tone?: "accent" | "warn" | "neutral";
+  tone?: "accent" | "magenta" | "warn" | "neutral";
 }
 
 const tones = {
   accent: "bg-accent-soft text-accent-strong",
+  magenta: "bg-magenta-soft text-magenta",
   warn: "bg-warn-soft text-warn",
-  neutral: "bg-black/[0.04] text-ink-muted",
+  neutral: "bg-bg-soft text-ink-muted",
 };
 
 export function Badge({ children, tone = "neutral" }: BadgeProps) {

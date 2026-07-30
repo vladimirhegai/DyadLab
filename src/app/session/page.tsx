@@ -1,31 +1,31 @@
 import type { Metadata } from "next";
-import { ButtonLink } from "@/components/ui/Button";
+import { SessionClient } from "@/components/live/SessionClient";
+import type { ParticipantId } from "@/lib/demo/types";
 
 export const metadata: Metadata = {
-  title: "DyadLab — Real Session (in progress)",
+  title: "DyadLab — Participant Session",
   robots: { index: false, follow: false },
 };
 
-export default function SessionPage() {
+export default async function SessionPage({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    code?: string | string[];
+    participant?: string | string[];
+  }>;
+}) {
+  const query = await searchParams;
+  const initialCode = typeof query.code === "string" ? query.code : undefined;
+  const initialParticipant =
+    query.participant === "P01" || query.participant === "P02"
+      ? (query.participant as ParticipantId)
+      : undefined;
+
   return (
-    <main className="flex flex-1 items-center justify-center py-24">
-      <div className="section-shell max-w-lg text-center">
-        <p className="text-[13px] font-semibold uppercase tracking-wider text-accent-strong">Backend phase</p>
-        <h1 className="mt-2 text-[26px] font-semibold tracking-tight text-ink">
-          Real two-browser sessions aren&apos;t wired up yet
-        </h1>
-        <p className="mt-4 text-[15px] leading-relaxed text-ink-muted">
-          This route is reserved for the actual WebRTC participant session — real camera/mic, a session-code
-          join flow, and researcher-driven condition changes delivered over WebSocket. See{" "}
-          <code className="rounded bg-black/[0.05] px-1.5 py-0.5 text-[13px]">HANDOFF.md</code> in the repository
-          for the implementation plan.
-        </p>
-        <div className="mt-8">
-          <ButtonLink variant="primary" href="/#demo">
-            Back to the simulated demo
-          </ButtonLink>
-        </div>
-      </div>
-    </main>
+    <SessionClient
+      initialCode={initialCode}
+      initialParticipant={initialParticipant}
+    />
   );
 }

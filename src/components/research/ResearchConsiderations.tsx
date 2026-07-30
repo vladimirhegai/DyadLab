@@ -12,7 +12,7 @@ const CONSIDERATIONS = [
 
 export function ResearchConsiderations() {
   return (
-    <section className="border-b border-border py-20 md:py-28">
+    <section className="bg-bg-soft py-20 md:py-28">
       <div className="section-shell">
         <SectionHeading eyebrow="Designed as a research prototype" title="Built with research ethics in mind" />
         <ul className="mt-10 grid gap-3 sm:grid-cols-2">

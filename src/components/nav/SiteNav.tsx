@@ -1,35 +1,38 @@
-import { GITHUB_REPO_URL } from "@/lib/site-config";
+import Link from "next/link";
 
 const LINKS = [
-  { href: "#overview", label: "Overview" },
-  { href: "#demo", label: "Demo" },
-  { href: "#architecture", label: "Architecture" },
+  { href: "/spotlight-sync", label: "Play the game" },
+  { href: "#overview", label: "How it works", showMobile: true },
+  { href: "#paper", label: "Research" },
 ];
 
 export function SiteNav() {
   return (
-    <header className="sticky top-0 z-50 border-b border-border bg-bg/90 backdrop-blur">
+    <header className="sticky top-0 z-50 border-b border-border/70 bg-bg">
       <nav className="section-shell flex h-16 items-center justify-between">
-        <a href="#top" className="text-[15px] font-semibold tracking-tight text-ink">
-          DyadLab
-        </a>
-        <ul className="flex items-center gap-6 text-sm text-ink-muted">
+        <Link href="#top" className="flex items-center gap-2.5 text-[16px] font-semibold tracking-tight text-ink">
+          <span className="dyad-mark" aria-hidden="true">
+            <span />
+            <span />
+          </span>
+          <span className="font-display">DyadLab</span>
+        </Link>
+        <ul className="flex items-center gap-5 text-sm font-medium text-ink-muted">
           {LINKS.map((link) => (
-            <li key={link.href}>
-              <a href={link.href} className="transition-colors hover:text-accent-strong">
+            <li key={link.href} className={link.showMobile ? "block" : "hidden sm:block"}>
+              <Link href={link.href} className="transition-colors hover:text-magenta">
                 {link.label}
-              </a>
+              </Link>
             </li>
           ))}
           <li>
-            <a
-              href={GITHUB_REPO_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="rounded-md border border-border px-3 py-1.5 font-medium text-ink transition-colors hover:border-accent hover:text-accent-strong"
+            <Link
+              href="/spotlight-sync"
+              className="rounded-full bg-accent px-4 py-2 font-semibold text-white shadow-[0_4px_14px_-5px_rgba(122,15,140,0.65)] transition-colors hover:bg-accent-strong"
             >
-              GitHub
-            </a>
+              <span className="sm:hidden">Play</span>
+              <span className="hidden sm:inline">Try the demo</span>
+            </Link>
           </li>
         </ul>
       </nav>

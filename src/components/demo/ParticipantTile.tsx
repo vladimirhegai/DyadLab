@@ -1,6 +1,9 @@
+"use client";
+
+import { useEffect, useRef } from "react";
 import type { ParticipantState, ParticipantId } from "@/lib/demo/types";
 
-const TINTS: Record<ParticipantId, string> = { P01: "#1f6f78", P02: "#3b5b8c" };
+const TINTS: Record<ParticipantId, string> = { P01: "#7a0f8c", P02: "#d31c77" };
 
 const CONDITION_LABEL: Record<ParticipantState["videoCondition"], string> = {
   normal: "Live",
@@ -10,8 +13,19 @@ const CONDITION_LABEL: Record<ParticipantState["videoCondition"], string> = {
   reducedFrameRate: "~6 fps",
 };
 
-export function ParticipantTile({ id, state }: { id: ParticipantId; state: ParticipantState }) {
+export function ParticipantTile({
+  id,
+  state,
+  stream,
+  isSelfView = false,
+}: {
+  id: ParticipantId;
+  state: ParticipantState;
+  stream?: MediaStream | null;
+  isSelfView?: boolean;
+}) {
   const { videoCondition, selfViewHidden, connected } = state;
+  const videoRef = useRef<HTMLVideoElement>(null);
   const filter =
     videoCondition === "blurred"
       ? "blur(6px)"
@@ -19,15 +33,36 @@ export function ParticipantTile({ id, state }: { id: ParticipantId; state: Parti
         ? "grayscale(1)"
         : undefined;
 
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream ?? null;
+    }
+  }, [stream]);
+
+  const hideLiveSelfView = Boolean(stream && isSelfView && selfViewHidden);
+
   return (
-    <div className="relative flex aspect-video flex-1 flex-col items-center justify-center overflow-hidden rounded-lg border border-border bg-ink">
-      {videoCondition === "disabled" ? (
+    <div className="relative flex aspect-video flex-1 flex-col items-center justify-center overflow-hidden rounded-2xl bg-ink">
+      {hideLiveSelfView ? (
+        <div className="flex flex-col items-center gap-2 text-white/70">
+          <span className="text-xs font-medium">Self-view hidden</span>
+          <span className="text-[10px] text-white/45">Your camera is still shared</span>
+        </div>
+      ) : videoCondition === "disabled" ? (
         <div className="flex flex-col items-center gap-2 text-white/70">
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
             <path d="M2 2l20 20M16 16.5V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7c0-.5.2-1 .5-1.3M9 5h5a2 2 0 0 1 2 2v3.5l4-3v9l-2.5-1.9" />
           </svg>
           <span className="text-xs font-medium">Video disabled</span>
         </div>
+      ) : stream ? (
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted={isSelfView}
+          className="h-full w-full object-cover"
+        />
       ) : (
         <div
           className={`flex h-14 w-14 items-center justify-center rounded-full text-sm font-semibold text-white transition-[filter] duration-200 ${
@@ -45,7 +80,7 @@ export function ParticipantTile({ id, state }: { id: ParticipantId; state: Parti
         </div>
       )}
 
-      {connected && !selfViewHidden && videoCondition !== "disabled" && (
+      {!stream && connected && !selfViewHidden && videoCondition !== "disabled" && (
         <div
           className="absolute bottom-2 right-2 h-8 w-11 rounded border border-white/20"
           style={{ background: TINTS[id], filter, opacity: 0.85 }}

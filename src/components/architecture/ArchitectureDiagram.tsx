@@ -1,47 +1,47 @@
-function Node({
+function Stage({
   title,
   subtitle,
-  className = "",
+  dot,
 }: {
   title: string;
   subtitle?: string;
-  className?: string;
+  dot: string;
 }) {
   return (
-    <div className={`card-surface px-4 py-3 text-center ${className}`}>
-      <p className="text-[13px] font-semibold text-ink">{title}</p>
-      {subtitle && <p className="mt-0.5 text-[11px] text-ink-muted">{subtitle}</p>}
+    <div className="flex items-start gap-3">
+      <span className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: dot }} />
+      <div>
+        <p className="text-[13.5px] font-semibold text-ink">{title}</p>
+        {subtitle && <p className="text-[12px] text-ink-muted">{subtitle}</p>}
+      </div>
     </div>
   );
 }
 
-function Arrow({ label }: { label?: string }) {
+function Connector({ label }: { label: string }) {
   return (
-    <div className="flex flex-col items-center py-1 text-ink-muted">
-      {label && <span className="mb-0.5 text-[10px] uppercase tracking-wide">{label}</span>}
-      <span aria-hidden className="text-lg leading-none">
-        ↓
-      </span>
+    <div className="ml-[4.5px] flex items-center gap-2 border-l-2 border-dashed border-accent-soft py-1.5 pl-[16px] text-[10.5px] uppercase tracking-wide text-ink-muted">
+      {label}
     </div>
   );
 }
 
 export function ArchitectureDiagram() {
   return (
-    <div className="card-surface p-6 md:p-8">
-      <div className="mx-auto flex max-w-md flex-col items-stretch">
-        <div className="grid grid-cols-2 gap-3">
-          <Node title="Participant A" />
-          <Node title="Participant B" />
+    <div className="rounded-2xl bg-white/95 p-6 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.35)] md:p-8">
+      <div className="mx-auto flex max-w-md flex-col">
+        <div className="grid grid-cols-2 gap-x-4">
+          <Stage title="Participant A" dot="var(--color-accent)" />
+          <Stage title="Participant B" dot="var(--color-magenta)" />
         </div>
-        <Arrow label="WebRTC audio / video" />
-        <Node title="React application" subtitle="TypeScript, browser client" />
-        <Arrow label="WebSocket / REST API" />
-        <Node title="FastAPI backend" subtitle="session + signaling logic" />
-        <Arrow />
-        <div className="grid grid-cols-2 gap-3">
-          <Node title="Session data" subtitle="SQLite" />
-          <Node title="Media metadata" subtitle="secure storage" />
+        <Connector label="WebRTC audio / video" />
+        <Stage title="React application" subtitle="TypeScript, browser client" dot="var(--color-accent)" />
+        <Connector label="WebSocket / REST API" />
+        <Stage title="FastAPI backend" subtitle="session + signaling logic" dot="var(--color-magenta)" />
+        <Connector label="" />
+        <div className="grid grid-cols-2 gap-x-4">
+          <Stage title="Session data" subtitle="SQLite" dot="var(--color-accent)" />
+          <Stage title="Media metadata" subtitle="secure storage" dot="var(--color-magenta)" />
         </div>
       </div>
     </div>

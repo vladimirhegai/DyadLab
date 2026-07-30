@@ -12,6 +12,9 @@
 
 # testing
 /coverage
+/test-results
+/playwright-report
+/backend/.test-data
 
 # next.js
 /.next/
@@ -29,9 +32,17 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+*.log
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+
+# python
+/.venv
+__pycache__/
+*.py[cod]
+/backend/dyadlab.db*
 
 # vercel
 .vercel
@@ -39,3 +50,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local agent tooling
+/.agents/
+/.claude/
+/.codex/
+/.gemini/
+/.impeccable/

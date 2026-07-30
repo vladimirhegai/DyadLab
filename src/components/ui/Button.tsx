@@ -1,21 +1,25 @@
 import type { AnchorHTMLAttributes, ButtonHTMLAttributes, ReactNode } from "react";
 
-type Variant = "primary" | "secondary" | "ghost" | "warn";
+type Variant = "primary" | "secondary" | "ghost" | "warn" | "onGradient" | "onGradientGhost";
 type Size = "md" | "sm";
 
 const base =
-  "inline-flex items-center justify-center gap-2 rounded-md font-medium transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
+  "inline-flex items-center justify-center gap-2 rounded-full font-semibold transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
 const variants: Record<Variant, string> = {
-  primary: "bg-accent text-white hover:bg-accent-strong",
-  secondary: "border border-border bg-surface text-ink hover:border-accent hover:text-accent-strong",
-  ghost: "text-ink-muted hover:text-ink hover:bg-black/[0.03]",
+  primary: "bg-accent text-white shadow-[0_4px_14px_-4px_rgba(122,15,140,0.55)] hover:bg-accent-strong hover:shadow-[0_6px_18px_-4px_rgba(122,15,140,0.6)]",
+  secondary: "border-2 border-accent/25 bg-surface text-accent-strong hover:border-accent hover:bg-accent-soft",
+  ghost: "text-ink-muted hover:text-accent-strong hover:bg-accent-soft/60",
   warn: "bg-warn text-white hover:opacity-90",
+  // For CTAs placed directly on the gradient hero / deep-color bands, where
+  // primary/secondary's own bg-accent + text-white classes would conflict.
+  onGradient: "bg-white text-accent-strong shadow-[0_8px_24px_-6px_rgba(0,0,0,0.35)] hover:bg-white/90",
+  onGradientGhost: "border-2 border-white/40 text-white hover:border-white hover:bg-white/10",
 };
 
 const sizes: Record<Size, string> = {
-  md: "px-5 py-2.5 text-sm",
-  sm: "px-3.5 py-1.5 text-xs",
+  md: "px-6 py-2.5 text-sm",
+  sm: "px-4 py-1.5 text-xs",
 };
 
 export function buttonClasses({

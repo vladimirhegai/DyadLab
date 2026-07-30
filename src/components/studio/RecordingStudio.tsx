@@ -87,7 +87,7 @@ export function RecordingStudio() {
   return (
     <div className="mt-8 space-y-6">
       <div className="card-surface p-5">
-        <div className="aspect-video w-full overflow-hidden rounded-md bg-ink">
+        <div className="aspect-video w-full overflow-hidden rounded-2xl bg-ink">
           <video ref={videoPreviewRef} autoPlay muted playsInline className="h-full w-full object-cover" />
         </div>
 
@@ -128,7 +128,7 @@ export function RecordingStudio() {
           <div className="grid gap-4 sm:grid-cols-2">
             {takes.map((take, i) => (
               <div key={take.id} className="card-surface p-3">
-                <video src={take.url} controls className="w-full rounded-md bg-ink" />
+                <video src={take.url} controls className="w-full rounded-2xl bg-ink" />
                 <div className="mt-2 flex items-center justify-between">
                   <span className="text-xs text-ink-muted">
                     Take {takes.length - i} · {take.createdAt}

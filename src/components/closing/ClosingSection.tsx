@@ -1,28 +1,29 @@
 import { ButtonLink } from "@/components/ui/Button";
-import { GITHUB_DESIGN_DOC_URL, GITHUB_REPO_URL } from "@/lib/site-config";
+import { GITHUB_REPO_URL } from "@/lib/site-config";
 
 export function ClosingSection() {
   return (
-    <section className="py-20 md:py-28">
-      <div className="section-shell max-w-2xl">
-        <p className="text-[13px] font-semibold uppercase tracking-wider text-accent-strong">What I built</p>
-        <h2 className="mt-3 text-[26px] font-semibold tracking-tight text-ink md:text-[30px]">
-          An independent research-software prototype
-        </h2>
-        <p className="mt-4 text-[16px] leading-relaxed text-ink-muted">
-          I designed and developed DyadLab end to end: the participant experience, researcher controls,
-          real-time communication, structured event collection, data export, automated testing, and the
-          technical documentation in this repository.
+    <section className="bg-bg-soft py-16 md:py-20">
+      <div className="section-shell max-w-3xl text-center">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-magenta">
+          Choose your path
         </p>
-        <div className="mt-8 flex flex-wrap gap-3">
-          <ButtonLink variant="primary" href="#demo">
-            Open Demo
+        <h2 className="font-display mt-3 text-[clamp(2rem,4vw,3rem)] font-semibold tracking-tight text-ink">
+          See the experiment in action.
+        </h2>
+        <p className="mx-auto mt-4 max-w-2xl text-[16px] leading-relaxed text-ink-muted">
+          Play immediately with a simulated partner, or open the researcher dashboard to
+          configure a real two-person session.
+        </p>
+        <div className="mt-8 flex flex-wrap justify-center gap-3">
+          <ButtonLink variant="primary" href="/spotlight-sync">
+            Play Spotlight Sync
           </ButtonLink>
-          <ButtonLink variant="secondary" href={GITHUB_REPO_URL} target="_blank" rel="noreferrer">
-            View GitHub
+          <ButtonLink variant="secondary" href="/dashboard">
+            Launch a live session
           </ButtonLink>
-          <ButtonLink variant="ghost" href={GITHUB_DESIGN_DOC_URL} target="_blank" rel="noreferrer">
-            Read Documentation
+          <ButtonLink variant="ghost" href={GITHUB_REPO_URL} target="_blank" rel="noreferrer">
+            View source
           </ButtonLink>
         </div>
       </div>

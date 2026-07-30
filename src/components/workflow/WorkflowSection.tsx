@@ -4,35 +4,45 @@ const STEPS = [
   {
     number: "1",
     title: "Configure",
-    description: "The researcher creates a session, chooses interaction conditions, and generates participant links.",
+    description:
+      "Create a session, choose video and task conditions, then copy two private participant links.",
     art: (
-      <div className="flex w-full flex-col gap-1.5">
-        <div className="h-2 w-3/4 rounded-full bg-accent-soft" />
-        <div className="h-2 w-1/2 rounded-full bg-accent-soft" />
-        <div className="mt-1 h-6 w-full rounded-md border border-dashed border-accent/40 bg-accent-soft/40" />
+      <div className="flex w-full flex-wrap items-center gap-1.5">
+        <span className="rounded-full bg-accent px-2.5 py-1 text-[10px] font-semibold text-white">Blur</span>
+        <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold text-ink-muted shadow-sm">
+          Low FPS
+        </span>
+        <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold text-ink-muted shadow-sm">
+          Video off
+        </span>
       </div>
     ),
   },
   {
     number: "2",
     title: "Interact",
-    description: "Two participants join a video call and complete a collaborative activity.",
+    description:
+      "Two people join a WebRTC call. Spotlight Sync alternates who receives the WHAT and WHERE clue.",
     art: (
-      <div className="flex w-full gap-1.5">
-        <div className="h-9 flex-1 rounded-md bg-ink" />
-        <div className="h-9 flex-1 rounded-md bg-ink/70" />
+      <div className="relative h-9 w-full">
+        <span className="absolute left-3 top-0 h-9 w-9 rounded-full bg-magenta/80" />
+        <span className="absolute left-8 top-0 h-9 w-9 rounded-full bg-[#52cfc0]/80 mix-blend-screen" />
       </div>
     ),
   },
   {
     number: "3",
     title: "Analyze",
-    description: "The system stores condition changes, task progress, timestamps, and session-quality information.",
+    description:
+      "An append-only timeline stores joins, condition changes, focus paths, outcomes, and CSV/JSON exports.",
     art: (
-      <div className="w-full space-y-1 font-mono text-[9px] text-ink-muted">
-        <div className="h-1.5 w-full rounded bg-black/[0.06]" />
-        <div className="h-1.5 w-4/5 rounded bg-black/[0.06]" />
-        <div className="h-1.5 w-full rounded bg-accent-soft" />
+      <div className="w-full space-y-1 font-mono text-[10px] leading-tight text-ink-muted">
+        <div>
+          00:00:27 <span className="text-accent-strong">video_condition</span>: blurred
+        </div>
+        <div>
+          00:00:31 <span className="text-magenta">spotlight_joint_found</span>: 420ms
+        </div>
       </div>
     ),
   },
@@ -40,8 +50,10 @@ const STEPS = [
 
 export function WorkflowSection() {
   return (
-    <section id="overview" className="border-b border-border py-20 md:py-28">
-      <div className="section-shell">
+    <section id="overview" className="relative overflow-hidden py-20 md:py-28">
+      <div className="blob -left-24 top-10 h-72 w-72 bg-accent-soft/70" aria-hidden="true" />
+      <div className="blob -right-16 bottom-0 h-56 w-56 bg-magenta-soft/70" aria-hidden="true" />
+      <div className="section-shell relative">
         <SectionHeading
           eyebrow="How an experiment works"
           title="Three steps, from session setup to structured data"
@@ -50,9 +62,9 @@ export function WorkflowSection() {
         <div className="mt-12 grid gap-6 md:grid-cols-3">
           {STEPS.map((step) => (
             <div key={step.number} className="card-surface p-6">
-              <div className="mb-6 flex h-16 items-center rounded-md bg-black/[0.02] p-3">{step.art}</div>
+              <div className="mb-6 flex h-16 items-center rounded-xl bg-bg-soft p-3">{step.art}</div>
               <div className="flex items-center gap-2.5">
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-accent text-[12px] font-semibold text-white">
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-accent font-display text-[13px] font-semibold text-white">
                   {step.number}
                 </span>
                 <h3 className="text-[17px] font-semibold text-ink">{step.title}</h3>
