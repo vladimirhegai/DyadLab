@@ -1,5 +1,39 @@
 import { expect, test } from "@playwright/test";
 
+async function expectClueNearOwnSpotlight(
+  page: import("@playwright/test").Page,
+  participant: "P01" | "P02",
+) {
+  const clue = page.getByTestId("self-clue-tag");
+  await expect(clue).toBeVisible();
+  await expect(clue).toHaveAttribute("data-participant", participant);
+
+  const [clueBox, p01Box, p02Box] = await Promise.all([
+    clue.boundingBox(),
+    page.locator(".sl-gel-p01").boundingBox(),
+    page.locator(".sl-gel-p02").boundingBox(),
+  ]);
+  expect(clueBox).not.toBeNull();
+  expect(p01Box).not.toBeNull();
+  expect(p02Box).not.toBeNull();
+
+  const center = (box: NonNullable<typeof clueBox>) => ({
+    x: box.x + box.width / 2,
+    y: box.y + box.height / 2,
+  });
+  const distance = (
+    a: ReturnType<typeof center>,
+    b: ReturnType<typeof center>,
+  ) => Math.hypot(a.x - b.x, a.y - b.y);
+  const clueCenter = center(clueBox!);
+  const ownCenter = center(participant === "P01" ? p01Box! : p02Box!);
+  const partnerCenter = center(participant === "P01" ? p02Box! : p01Box!);
+
+  expect(distance(clueCenter, ownCenter)).toBeLessThan(
+    distance(clueCenter, partnerCenter),
+  );
+}
+
 test("two participants complete a researcher-controlled live session", async ({
   browser,
   request,
@@ -129,6 +163,8 @@ test("participants can join without camera or microphone", async ({ browser }) =
     await dashboard.getByTestId("start-spotlight-task").click();
     await expect(p01.getByTestId("participant-spotlight-task-status")).toHaveText("active");
     await expect(p02.getByTestId("participant-spotlight-task-status")).toHaveText("active");
+    await expectClueNearOwnSpotlight(p01, "P01");
+    await expectClueNearOwnSpotlight(p02, "P02");
   } finally {
     await Promise.all([
       dashboardContext.close(),

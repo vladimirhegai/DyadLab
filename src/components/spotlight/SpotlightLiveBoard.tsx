@@ -217,6 +217,7 @@ export function SpotlightLiveBoard({
           contextMode={task.contextMode}
           interactive={playing}
           foundIds={foundIds}
+          selfParticipant={viewer}
           selfClue={playing && round?.clue ? spokenSelfClue(round.clue) : null}
           onMove={handleMove}
           onSnap={handleSnap}

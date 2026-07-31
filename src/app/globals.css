@@ -710,8 +710,11 @@ body {
   opacity: 1;
 }
 
-.sl-tag.is-you {
+.sl-tag.is-self {
   width: 10.5rem;
+}
+
+.sl-tag.is-p01 {
   background: rgba(255, 236, 246, 0.94);
   color: #45102f;
   box-shadow:
@@ -719,7 +722,7 @@ body {
     0 12px 30px -16px rgba(0, 0, 0, 0.85);
 }
 
-.sl-tag.is-partner {
+.sl-tag.is-p02 {
   background: rgba(228, 253, 250, 0.95);
   color: #0c2f2c;
   box-shadow:

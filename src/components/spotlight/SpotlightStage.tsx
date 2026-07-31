@@ -9,6 +9,7 @@ import {
   type PointerEvent,
   type RefObject,
 } from "react";
+import type { ParticipantId } from "@/lib/demo/types";
 import type { BotLine } from "@/lib/spotlight-sync/bot";
 import { SPOTLIGHT_OBJECTS, SPOTLIGHT_OBJECT_BY_ID } from "@/lib/spotlight-sync/rounds";
 import type {
@@ -202,6 +203,7 @@ export function SpotlightStage({
   interactive,
   foundIds,
   revealed = false,
+  selfParticipant = "P01",
   selfClue = null,
   partnerLine = null,
   onMove,
@@ -215,6 +217,8 @@ export function SpotlightStage({
   foundIds: string[];
   /** Drops the spotlight masks so the finished room is seen whole. */
   revealed?: boolean;
+  /** Participant whose light owns the private clue and pointer interaction. */
+  selfParticipant?: ParticipantId;
   /** Your own clue, carried next to your own light so it is never out of view. */
   selfClue?: string | null;
   /** What the partner is currently saying, shown beside their light. */
@@ -359,8 +363,16 @@ export function SpotlightStage({
             top: TOP_BAND,
             bottom: state.height - BOTTOM_BAND,
           };
-          const selfAt = { x: p1.x * state.width, y: p1.y * state.height };
-          const partnerAt = { x: p2.x * state.width, y: p2.y * state.height };
+          const selfPoint = selfParticipant === "P01" ? p1 : p2;
+          const partnerPoint = selfParticipant === "P01" ? p2 : p1;
+          const selfAt = {
+            x: selfPoint.x * state.width,
+            y: selfPoint.y * state.height,
+          };
+          const partnerAt = {
+            x: partnerPoint.x * state.width,
+            y: partnerPoint.y * state.height,
+          };
 
           let placedPartner: LabelRect | null = null;
           if (partnerTag.classList.contains("is-active") && fx.current.partnerSize.h) {
@@ -539,7 +551,7 @@ export function SpotlightStage({
         }
       },
     }),
-    [emitBurst],
+    [emitBurst, selfParticipant],
   );
 
   // Your light follows the pointer whenever the scene is on screen, including
@@ -588,7 +600,11 @@ export function SpotlightStage({
 
       <div
         ref={selfTagRef}
-        className={`sl-tag is-you${selfClue ? " is-active" : ""}`}
+        className={`sl-tag is-self is-${selfParticipant.toLowerCase()}${
+          selfClue ? " is-active" : ""
+        }`}
+        data-participant={selfParticipant}
+        data-testid="self-clue-tag"
         aria-hidden="true"
       >
         <span className="sl-tag-clue">{selfClue}</span>
@@ -597,7 +613,9 @@ export function SpotlightStage({
 
       <div
         ref={partnerTagRef}
-        className={`sl-tag is-partner${partnerLine ? " is-active" : ""}`}
+        className={`sl-tag is-${selfParticipant === "P01" ? "p02" : "p01"}${
+          partnerLine ? " is-active" : ""
+        }`}
         aria-hidden="true"
       >
         {/* Keyed inner span so a new line replays the entrance without
