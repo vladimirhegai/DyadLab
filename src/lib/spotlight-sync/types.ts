@@ -50,6 +50,8 @@ export interface SpotlightObject {
   surface: SpotlightSurface;
   zone: SpotlightZone;
   region: SpotlightRegion;
+  /** Visible properties a WHAT clue can name. Keyed by `SpotlightTrait`. */
+  traits: string[];
 }
 
 export interface SpotlightClue {

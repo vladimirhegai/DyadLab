@@ -382,12 +382,14 @@ body {
   color: #06241f;
 }
 
+/* Spread by shadow rather than padding: padding on an inline mark adds real
+   width, which is what used to strand a full stop away from its sentence. */
 .sl-bot-highlight {
-  border-radius: 0.28rem;
+  border-radius: 0.2rem;
   background: #ffe1f2;
-  padding: 0.04rem 0.2rem;
   color: #5f0e6c;
   font-weight: 800;
+  box-shadow: 0 0 0 0.15em #ffe1f2;
 }
 
 .sl-clue-join {
@@ -672,24 +674,79 @@ body {
   to { transform: scale(1.9); opacity: 0; }
 }
 
-.sl-caption {
+/* The two floating labels: your own clue rides with your light, the partner's
+   line rides with theirs. Both are a fixed width and are positioned in pixels
+   by the stage, which places them against each other so they cannot collide.
+   `left` and `top` are the box corner, not a centre — no transform offset. */
+.sl-tag {
   position: absolute;
-  z-index: 9;
-  border-radius: 999px;
-  background: rgba(255, 245, 252, 0.94);
-  padding: 0.2rem 0.6rem;
-  color: #2c0f28;
-  font-size: 0.66rem;
-  font-weight: 700;
-  white-space: nowrap;
+  z-index: 10;
+  left: 0;
+  top: 0;
+  width: 11.5rem;
+  border-radius: 0.7rem;
+  padding: 0.38rem 0.6rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.32;
+  text-align: left;
   opacity: 0;
   pointer-events: none;
-  transform: translate(-50%, 1.9rem);
-  transition: opacity 120ms ease;
+  box-shadow: 0 12px 30px -16px rgba(0, 0, 0, 0.85);
+  transition: opacity 160ms ease;
 }
 
-.sl-caption.is-active {
+.sl-tag.is-active {
   opacity: 1;
+}
+
+.sl-tag.is-you {
+  width: 10.5rem;
+  background: rgba(255, 236, 246, 0.94);
+  color: #45102f;
+  box-shadow:
+    inset 0 0 0 1px rgba(239, 93, 168, 0.5),
+    0 12px 30px -16px rgba(0, 0, 0, 0.85);
+}
+
+.sl-tag.is-partner {
+  background: rgba(228, 253, 250, 0.95);
+  color: #0c2f2c;
+  box-shadow:
+    inset 0 0 0 1px rgba(82, 207, 192, 0.5),
+    0 12px 30px -16px rgba(0, 0, 0, 0.85);
+}
+
+.sl-tag-clue {
+  display: block;
+  font-size: 0.66rem;
+  font-weight: 700;
+  opacity: 0.72;
+}
+
+.sl-tag-name {
+  display: block;
+  margin-top: 0.1rem;
+  font-family: var(--font-display), ui-serif, serif;
+  font-size: 0.86rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.sl-tag-name[hidden] {
+  display: none;
+}
+
+.sl-tag-line {
+  display: block;
+  animation: sl-tag-in 200ms cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+@keyframes sl-tag-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.35rem);
+  }
 }
 
 .sl-lock {
@@ -829,7 +886,10 @@ body {
   filter: blur(0) saturate(0.94) brightness(0.9);
 }
 
-.sl-stage.is-revealed .sl-gel {
+/* The animation loop stops once the session is over, so anything still keyed to
+   a spotlight position would sit frozen mid-room. Both go with the masks. */
+.sl-stage.is-revealed .sl-gel,
+.sl-stage.is-revealed .sl-layer-bloom {
   opacity: 0;
   transition: opacity 900ms ease;
 }
@@ -890,39 +950,8 @@ body {
   color: #fff;
 }
 
-/* The partner speaks in the scene as well as in the call column. Width and
-   height are fixed: the jitter people noticed came from the box resizing under
-   a light that never stops moving, not from the movement itself. */
-.sl-bubble {
-  position: absolute;
-  z-index: 10;
-  left: clamp(6.5rem, var(--sl-p2x, 70%), calc(100% - 6.5rem));
-  top: clamp(3.5rem, var(--sl-p2y, 30%), calc(100% - 3rem));
-  display: block;
-  width: 11.5rem;
-  min-height: 2.5rem;
-  border-radius: 0.8rem 0.8rem 0.8rem 0.2rem;
-  background: rgba(228, 253, 250, 0.95);
-  padding: 0.4rem 0.65rem;
-  color: #0c2f2c;
-  font-size: 0.74rem;
-  font-weight: 600;
-  line-height: 1.3;
-  pointer-events: none;
-  text-align: left;
-  transform: translate(-50%, calc(-100% - 2.6rem));
-  box-shadow: 0 12px 30px -14px rgba(0, 0, 0, 0.8);
-  animation: sl-bubble-in 200ms cubic-bezier(0.2, 0.9, 0.25, 1) both;
-}
-
-@keyframes sl-bubble-in {
-  from {
-    opacity: 0;
-    transform: translate(-50%, calc(-100% - 2rem)) scale(0.95);
-  }
-}
-
-/* Mid-round correction. Sits at the top so it never covers the lock ring. */
+/* Mid-round correction. Sits at the top so it never covers the lock ring, in
+   the band the stage reserves for it when placing the floating labels. */
 .sl-notice {
   position: absolute;
   z-index: 11;
@@ -1423,6 +1452,19 @@ body {
   .sl-readout {
     display: none;
   }
+
+  .sl-tag {
+    width: 9.5rem;
+    font-size: 0.66rem;
+  }
+
+  .sl-tag.is-you {
+    width: 8.75rem;
+  }
+
+  .sl-tag-name {
+    font-size: 0.78rem;
+  }
 }
 
 /* Below three comfortable columns the board stacks and the page scrolls. */
@@ -1457,7 +1499,9 @@ body {
     --sl-stage-vh: 200vh;
   }
 
-  .sl-bubble {
+  /* Too little room for a box beside a moving light; the call column carries
+     the partner's line on its own down here. */
+  .sl-tag.is-partner {
     display: none;
   }
 
@@ -1523,6 +1567,7 @@ body {
   .sl-glint.is-active i:last-child,
   .sl-toast,
   .sl-notice,
+  .sl-tag-line,
   .sl-finish {
     animation: none;
   }

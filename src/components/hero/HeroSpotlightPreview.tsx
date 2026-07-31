@@ -132,12 +132,14 @@ export function HeroSpotlightPreview() {
           foundIds={foundIds}
           ariaLabel="Two automated spotlights search the real game scene"
         />
+        {/* Which bot holds WHAT alternates from round to round, so the caption
+            is read off the clue rather than assumed. */}
         <div className="hero-preview-clue hero-preview-clue-you" aria-hidden="true">
-          <span>Bot A knows what</span>
+          <span>Bot A knows {PREVIEW_ROUNDS[activeRound].clues.P01.kind === "object" ? "what" : "where"}</span>
           <strong>{PREVIEW_ROUNDS[activeRound].clues.P01.label}</strong>
         </div>
         <div className="hero-preview-clue hero-preview-clue-bot" aria-hidden="true">
-          <span>Bot B knows where</span>
+          <span>Bot B knows {PREVIEW_ROUNDS[activeRound].clues.P02.kind === "object" ? "what" : "where"}</span>
           <strong>{PREVIEW_ROUNDS[activeRound].clues.P02.label}</strong>
         </div>
       </div>

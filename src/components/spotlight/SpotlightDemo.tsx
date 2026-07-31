@@ -5,6 +5,8 @@ import { EventTimeline } from "@/components/demo/EventTimeline";
 import { Button } from "@/components/ui/Button";
 import type { DemoEvent, EventType } from "@/lib/demo/types";
 import {
+  BOT_PRIORITY,
+  botRuleOut,
   botSay,
   createBotState,
   resetBotForRound,
@@ -23,8 +25,11 @@ import {
   type EngineState,
 } from "@/lib/spotlight-sync/engine";
 import {
+  DEFAULT_ROUND_SEED,
+  generateRounds,
   getSpotlightObject,
-  SPOTLIGHT_ROUNDS,
+  spokenSelfClue,
+  type SpotlightRoundDefinition,
 } from "@/lib/spotlight-sync/rounds";
 import {
   DEFAULT_SPOTLIGHT_POSITIONS,
@@ -36,13 +41,12 @@ import {
   type SpotlightRoundTrace,
 } from "@/lib/spotlight-sync/types";
 import { CallStrip } from "./CallStrip";
-import { BotMessage } from "./BotMessage";
 import { SpotlightStage, type StageHandle } from "./SpotlightStage";
 import { SpotlightTrace } from "./SpotlightTrace";
 
 const MemoStage = memo(SpotlightStage);
 
-const ROUND_COUNT = SPOTLIGHT_ROUNDS.length;
+const ROUND_COUNT = 6;
 type DemoFeedbackMode = SpotlightFeedbackMode | "none";
 type PartnerGuidanceMode = "hints" | "silent";
 
@@ -64,6 +68,8 @@ interface ViewState {
   lastLabel: string | null;
   measures: SpotlightRoundMeasures[];
   traces: SpotlightRoundTrace[];
+  /** The session in play. A fresh one is drawn every time you start. */
+  rounds: SpotlightRoundDefinition[];
 }
 
 const IDLE_VIEW: ViewState = {
@@ -77,6 +83,7 @@ const IDLE_VIEW: ViewState = {
   lastLabel: null,
   measures: [],
   traces: [],
+  rounds: generateRounds(DEFAULT_ROUND_SEED, ROUND_COUNT),
 };
 
 function Metric({ label, value }: { label: string; value: string }) {
@@ -103,19 +110,18 @@ export function SpotlightDemo() {
   const [running, setRunning] = useState(false);
 
   const stageRef = useRef<StageHandle>(null);
-  const stageWrapRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<EngineState | null>(null);
   const botRef = useRef<BotState | null>(null);
   const pointerRef = useRef<SpotlightPoint>({ ...DEFAULT_SPOTLIGHT_POSITIONS.P01! });
   const eventSeq = useRef(0);
   const botSeqRef = useRef(-1);
-  const botLineRef = useRef(false);
+  const botSpeakingRef = useRef(false);
   const hudAtRef = useRef(0);
   const noticeSeq = useRef(0);
   const noticeTimer = useRef<number | null>(null);
   const dwellRef = useRef({ id: null as string | null, ms: 0, warned: new Set<string>() });
 
-  const round = SPOTLIGHT_ROUNDS[Math.min(view.roundIndex, ROUND_COUNT - 1)];
+  const round = view.rounds[Math.min(view.roundIndex, view.rounds.length - 1)];
   const ownClue = round.clues.P01;
   const partnerClue = round.clues.P02;
 
@@ -144,7 +150,8 @@ export function SpotlightDemo() {
     noticeSeq.current += 1;
     setNotice({ text, seq: noticeSeq.current });
     if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
-    noticeTimer.current = window.setTimeout(() => setNotice(null), 2600);
+    // Long enough to actually finish the sentence before it disappears.
+    noticeTimer.current = window.setTimeout(() => setNotice(null), 4600);
   }, []);
 
   useEffect(
@@ -155,12 +162,16 @@ export function SpotlightDemo() {
   );
 
   const start = useCallback(() => {
+    // A fresh session every time. The seed goes into the event stream so any run
+    // someone reports can be replayed exactly.
+    const seed = Math.floor(Math.random() * 0x7fffffff);
+    const rounds = generateRounds(seed, ROUND_COUNT);
     const partnerStart = { ...DEFAULT_SPOTLIGHT_POSITIONS.P02! };
-    const engine = createEngineState(pointerRef.current, partnerStart);
+    const engine = createEngineState(pointerRef.current, partnerStart, rounds);
     const bot = createBotState(partnerStart);
     const effects: EngineEffect[] = [];
     startRound(engine, 0, effects);
-    resetBotForRound(bot, 0, 0);
+    resetBotForRound(bot, rounds[0], 0);
     engineRef.current = engine;
     botRef.current = bot;
     botSeqRef.current = -1;
@@ -169,20 +180,20 @@ export function SpotlightDemo() {
     dwellRef.current = { id: null, ms: 0, warned: new Set() };
     setEvents([]);
     setNotice(null);
-    setView({ ...IDLE_VIEW, phase: "playing" });
+    setView({ ...IDLE_VIEW, phase: "playing", rounds });
     setHud({ elapsedMs: 0, separation: 1 });
     setRunning(true);
     pushEvents([
       {
         actor: "researcher",
         type: "spotlight_task_started",
-        value: `task=spotlight_sync;rounds=${ROUND_COUNT};context=${contextMode};feedback=${feedbackMode};partner_guidance=${partnerGuidance}`,
+        value: `task=spotlight_sync;rounds=${ROUND_COUNT};seed=${seed};context=${contextMode};feedback=${feedbackMode};partner_guidance=${partnerGuidance}`,
         at: 0,
       },
       {
         actor: "session",
         type: "spotlight_round_started",
-        value: `round=1;p01_clue=${SPOTLIGHT_ROUNDS[0].clues.P01.shortLabel};p02_clue=${SPOTLIGHT_ROUNDS[0].clues.P02.shortLabel}`,
+        value: `round=1;p01_clue=${rounds[0].clues.P01.shortLabel};p02_clue=${rounds[0].clues.P02.shortLabel}`,
         at: 0,
       },
     ]);
@@ -196,9 +207,9 @@ export function SpotlightDemo() {
       for (const effect of effects) {
         switch (effect.type) {
           case "round-started": {
-            resetBotForRound(bot, effect.roundIndex, engine.clockMs);
+            const definition = engine.rounds[effect.roundIndex];
+            resetBotForRound(bot, definition, engine.clockMs);
             dwellRef.current = { id: null, ms: 0, warned: new Set() };
-            const definition = SPOTLIGHT_ROUNDS[effect.roundIndex];
             entries.push({
               actor: "session",
               type: "spotlight_round_started",
@@ -239,8 +250,11 @@ export function SpotlightDemo() {
             break;
           case "false-lock": {
             const object = getSpotlightObject(effect.objectId);
-            const definition = SPOTLIGHT_ROUNDS[effect.roundIndex];
+            const definition = engine.rounds[effect.roundIndex];
             stageRef.current?.reject(effect.objectId);
+            // A joint lock is evidence, so the partner is entitled to it: that
+            // object is off its shortlist for the rest of the round.
+            botRuleOut(bot, effect.objectId);
             // Naming which clue it failed is the lesson of the round, and it
             // gives nothing away: both clues stay true of several objects.
             const matchesOwnClue = definition.clues.P01.candidates.includes(effect.objectId);
@@ -252,9 +266,11 @@ export function SpotlightDemo() {
             );
             botSay(
               bot,
-              matchesOwnClue ? "Mine isn't over there." : "That's not the one.",
+              matchesOwnClue
+                ? { text: "That one isn’t in my half.", emphasis: "isn’t in my half" }
+                : { text: "Cross that one off. Mine is still out there.", emphasis: "Cross that one off" },
               engine.clockMs,
-              2200,
+              BOT_PRIORITY.outcome,
             );
             entries.push({
               actor: "session",
@@ -332,15 +348,23 @@ export function SpotlightDemo() {
 
       engine.self = pointerRef.current;
       if (engine.phase === "playing") {
-        stepBot(bot, dt, engine.clockMs, engine.roundIndex, engine.self, engine.round.cooldowns);
+        stepBot(
+          bot,
+          dt,
+          engine.clockMs,
+          engine.rounds[engine.roundIndex],
+          engine.self,
+          engine.round.cooldowns,
+          engine.round.elapsedMs,
+        );
       }
       engine.partner = bot.pos;
 
       const effects: EngineEffect[] = [];
       stepEngine(engine, dt, effects);
 
-      const activeRound = SPOTLIGHT_ROUNDS[engine.roundIndex];
-      const hovered = engine.phase === "playing" ? objectUnder(engine.self) : null;
+      const activeRound = engine.rounds[engine.roundIndex];
+      const hovered = engine.phase === "completed" ? null : objectUnder(engine.self);
 
       const dwell = dwellRef.current;
       if (hovered?.id !== dwell.id) {
@@ -377,23 +401,19 @@ export function SpotlightDemo() {
         dt,
       });
 
-      // The bubble is a sibling of the stage, so it needs its own copy of the
-      // partner light position to anchor against.
-      const wrap = stageWrapRef.current;
-      if (wrap) {
-        wrap.style.setProperty("--sl-p2x", `${engine.partner.x * 100}%`);
-        wrap.style.setProperty("--sl-p2y", `${engine.partner.y * 100}%`);
-      }
-
       if (bot.lineSeq !== botSeqRef.current) {
         botSeqRef.current = bot.lineSeq;
         setBotLine(bot.line ? { ...bot.line, seq: bot.lineSeq } : null);
-        setBotSpeaking(Boolean(bot.line));
-      } else if (!bot.line && botLineRef.current) {
-        setBotLine(null);
-        setBotSpeaking(false);
       }
-      botLineRef.current = Boolean(bot.line);
+
+      // A line now stays on screen until something replaces it, so "speaking"
+      // is the read window rather than the lifetime of the bubble — otherwise
+      // the partner's face would be talking for the whole session.
+      const speaking = Boolean(bot.line) && engine.clockMs < bot.lineHoldUntilMs;
+      if (speaking !== botSpeakingRef.current) {
+        botSpeakingRef.current = speaking;
+        setBotSpeaking(speaking);
+      }
 
       if (now - hudAtRef.current > 200) {
         hudAtRef.current = now;
@@ -546,7 +566,7 @@ export function SpotlightDemo() {
             <div className="sl-clue-join">
               <span aria-hidden="true">need both</span>
               <ol className="sl-pips" aria-label={`${view.hits} of ${ROUND_COUNT} targets found`}>
-                {SPOTLIGHT_ROUNDS.map((definition, index) => (
+                {view.rounds.map((definition, index) => (
                   <li
                     key={definition.id}
                     className={
@@ -568,27 +588,27 @@ export function SpotlightDemo() {
             </div>
           </div>
 
-          <div className="sl-stage-wrap" ref={stageWrapRef}>
+          <div className="sl-stage-wrap">
             <MemoStage
               ref={stageRef}
               contextMode={contextMode}
-              interactive={playing}
+              // Aiming stays available through the feedback pause; the engine is
+              // what refuses to lock anything until the next round has started.
+              interactive={active && view.phase !== "completed"}
               foundIds={view.foundIds}
               revealed={view.phase === "completed"}
+              selfClue={active && view.phase !== "completed" ? spokenSelfClue(ownClue) : null}
+              partnerLine={
+                partnerGuidance === "hints" && (playing || view.phase === "feedback")
+                  ? botLine
+                  : null
+              }
               onMove={handleMove}
               onSnap={handleSnap}
               ariaLabel="Search scene. Move your spotlight with the pointer, or tab through the objects."
             />
 
-            {partnerGuidance === "hints" &&
-              botLine &&
-              (view.phase === "playing" || view.phase === "feedback") && (
-              <p className="sl-bubble" key={botLine.seq} aria-hidden="true">
-                <BotMessage line={botLine} />
-              </p>
-            )}
-
-            {active && (
+            {active && view.phase !== "completed" && (
               <div className="sl-readout" aria-hidden="true">
                 <div className={`sl-meter ${overlapping ? "is-overlapping" : ""}`}>
                   <i style={{ transform: `scaleX(${closeness.toFixed(3)})` }} />

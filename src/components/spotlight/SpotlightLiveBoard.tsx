@@ -3,7 +3,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ParticipantId } from "@/lib/demo/types";
 import { ENGINE, objectUnder } from "@/lib/spotlight-sync/engine";
-import { getSpotlightObject } from "@/lib/spotlight-sync/rounds";
+import { getSpotlightObject, spokenSelfClue } from "@/lib/spotlight-sync/rounds";
 import {
   DEFAULT_SPOTLIGHT_POSITIONS,
   sceneDistance,
@@ -217,6 +217,7 @@ export function SpotlightLiveBoard({
           contextMode={task.contextMode}
           interactive={playing}
           foundIds={foundIds}
+          selfClue={playing && round?.clue ? spokenSelfClue(round.clue) : null}
           onMove={handleMove}
           onSnap={handleSnap}
           ariaLabel="Search scene. Move your spotlight with the pointer, or tab through the objects."

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  memo,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -8,11 +9,13 @@ import {
   type PointerEvent,
   type RefObject,
 } from "react";
+import type { BotLine } from "@/lib/spotlight-sync/bot";
 import { SPOTLIGHT_OBJECTS, SPOTLIGHT_OBJECT_BY_ID } from "@/lib/spotlight-sync/rounds";
 import type {
   SpotlightContextMode,
   SpotlightPoint,
 } from "@/lib/spotlight-sync/types";
+import { BotMessage } from "./BotMessage";
 import { ObjectGlyph } from "./ObjectGlyph";
 import { SceneArt, SceneDefs } from "./SceneArt";
 
@@ -32,10 +35,70 @@ import { SceneArt, SceneDefs } from "./SceneArt";
  * Per-frame updates are pushed through the imperative handle instead of React
  * state: the parent already runs one animation loop for the game engine, and
  * re-rendering ~400 SVG nodes at 60fps would be pointless work.
+ *
+ * The stage also owns both floating labels — your own clue tag and the partner's
+ * speech bubble. They are placed here rather than by their callers because they
+ * are the only two boxes that follow a moving light, so this is the one place
+ * that can guarantee they never land on top of each other, on the notice strip,
+ * or outside the scene.
  */
 
 const P01_RGB = [239, 93, 168] as const;
 const P02_RGB = [82, 207, 192] as const;
+
+/** Gap between a light and the label anchored to it. */
+const LABEL_GAP = 16;
+/** Inset from the scene edge. */
+const EDGE_PAD = 10;
+/** Reserved for the mid-round correction notice, which can run to two lines. */
+const TOP_BAND = 62;
+/** Reserved for the convergence readout. */
+const BOTTOM_BAND = 46;
+
+interface LabelRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+interface LabelBounds {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+function clamp(value: number, low: number, high: number) {
+  return Math.min(Math.max(value, low), Math.max(low, high));
+}
+
+function overlapArea(a: LabelRect, b: LabelRect) {
+  const x = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+  const y = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+  return x > 0 && y > 0 ? x * y : 0;
+}
+
+/** Centre a label on a light, above it by preference, kept inside `bounds`. */
+function placeLabel(
+  cx: number,
+  cy: number,
+  size: { w: number; h: number },
+  below: boolean,
+  bounds: LabelBounds,
+): LabelRect {
+  return {
+    x: clamp(cx - size.w / 2, bounds.left, bounds.right - size.w),
+    y: clamp(below ? cy + LABEL_GAP : cy - LABEL_GAP - size.h, bounds.top, bounds.bottom - size.h),
+    w: size.w,
+    h: size.h,
+  };
+}
+
+function applyRect(element: HTMLElement, rect: LabelRect) {
+  element.style.left = `${Math.round(rect.x)}px`;
+  element.style.top = `${Math.round(rect.y)}px`;
+}
 
 export interface StageFrame {
   p1: SpotlightPoint;
@@ -76,7 +139,11 @@ interface Ring {
   width: number;
 }
 
-function SceneLayer({
+/**
+ * Memoised because a label changing is a React render of this component, and the
+ * scene art underneath it has no reason to be rebuilt for that.
+ */
+const SceneLayer = memo(function SceneLayer({
   variant,
   foundIds,
 }: {
@@ -101,7 +168,33 @@ function SceneLayer({
       </div>
     </div>
   );
-}
+});
+
+const HitLayer = memo(function HitLayer({
+  interactive,
+  onSnap,
+}: {
+  interactive: boolean;
+  onSnap?: (objectId: string, point: SpotlightPoint) => void;
+}) {
+  return (
+    <div className="sl-hit-layer">
+      {SPOTLIGHT_OBJECTS.map((object) => (
+        <button
+          key={object.id}
+          type="button"
+          className="sl-hit"
+          style={{ left: `${object.x * 100}%`, top: `${object.y * 100}%` }}
+          disabled={!interactive}
+          onFocus={() => onSnap?.(object.id, { x: object.x, y: object.y })}
+          onClick={() => onSnap?.(object.id, { x: object.x, y: object.y })}
+          aria-label={`Move your spotlight to the ${object.label.toLowerCase()}`}
+          data-testid={`spotlight-${object.id}`}
+        />
+      ))}
+    </div>
+  );
+});
 
 export function SpotlightStage({
   ref,
@@ -109,16 +202,23 @@ export function SpotlightStage({
   interactive,
   foundIds,
   revealed = false,
+  selfClue = null,
+  partnerLine = null,
   onMove,
   onSnap,
   ariaLabel,
 }: {
   ref?: RefObject<StageHandle | null>;
   contextMode: SpotlightContextMode;
+  /** Whether the keyboard hit targets take focus. Pointer tracking is always live. */
   interactive: boolean;
   foundIds: string[];
   /** Drops the spotlight masks so the finished room is seen whole. */
   revealed?: boolean;
+  /** Your own clue, carried next to your own light so it is never out of view. */
+  selfClue?: string | null;
+  /** What the partner is currently saying, shown beside their light. */
+  partnerLine?: (BotLine & { seq: number }) | null;
   onMove?: (point: SpotlightPoint) => void;
   onSnap?: (objectId: string, point: SpotlightPoint) => void;
   ariaLabel: string;
@@ -127,7 +227,9 @@ export function SpotlightStage({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const lockRef = useRef<HTMLDivElement>(null);
   const glintRef = useRef<HTMLDivElement>(null);
-  const captionRef = useRef<HTMLDivElement>(null);
+  const selfTagRef = useRef<HTMLDivElement>(null);
+  const selfNameRef = useRef<HTMLElement>(null);
+  const partnerTagRef = useRef<HTMLDivElement>(null);
   const rejectRef = useRef<HTMLDivElement>(null);
 
   const fx = useRef({
@@ -139,6 +241,8 @@ export function SpotlightStage({
     width: 0,
     height: 0,
     reducedMotion: false,
+    selfSize: { w: 0, h: 0 },
+    partnerSize: { w: 0, h: 0 },
   });
 
   // Keep the canvas backing store matched to its box, in device pixels.
@@ -175,6 +279,25 @@ export function SpotlightStage({
       observer.disconnect();
       media.removeEventListener("change", onMediaChange);
     };
+  }, []);
+
+  // Label boxes are measured only when they actually change shape — on a new
+  // line, a font load, or a resize — so the per-frame placement below never has
+  // to read layout back out of the DOM.
+  useEffect(() => {
+    const measure = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const size = {
+          w: entry.target.clientWidth,
+          h: entry.target.clientHeight,
+        };
+        if (entry.target === selfTagRef.current) fx.current.selfSize = size;
+        if (entry.target === partnerTagRef.current) fx.current.partnerSize = size;
+      }
+    });
+    if (selfTagRef.current) measure.observe(selfTagRef.current);
+    if (partnerTagRef.current) measure.observe(partnerTagRef.current);
+    return () => measure.disconnect();
   }, []);
 
   const emitBurst = useCallback(
@@ -215,17 +338,63 @@ export function SpotlightStage({
 
         // Naming whatever the light is on keeps the WHAT clues answerable:
         // a blurred silhouette is a search problem, an unreadable one is not.
-        const caption = captionRef.current;
-        if (caption && state.hoverId !== hoverId) {
+        const selfName = selfNameRef.current;
+        if (selfName && state.hoverId !== hoverId) {
           state.hoverId = hoverId;
           const object = hoverId ? SPOTLIGHT_OBJECT_BY_ID.get(hoverId) : null;
-          if (object) {
-            caption.style.left = `${object.x * 100}%`;
-            caption.style.top = `${object.y * 100}%`;
-            caption.textContent = object.label;
-            caption.classList.add("is-active");
-          } else {
-            caption.classList.remove("is-active");
+          selfName.textContent = object?.label ?? "";
+          selfName.hidden = !object;
+        }
+
+        // --- floating labels ---------------------------------------------
+        // Both boxes track a light that never stops moving, so they are placed
+        // against each other rather than independently: the partner's line gets
+        // the spot it wants and your own tag takes the best remaining one.
+        const selfTag = selfTagRef.current;
+        const partnerTag = partnerTagRef.current;
+        if (selfTag && partnerTag && state.width) {
+          const bounds: LabelBounds = {
+            left: EDGE_PAD,
+            right: state.width - EDGE_PAD,
+            top: TOP_BAND,
+            bottom: state.height - BOTTOM_BAND,
+          };
+          const selfAt = { x: p1.x * state.width, y: p1.y * state.height };
+          const partnerAt = { x: p2.x * state.width, y: p2.y * state.height };
+
+          let placedPartner: LabelRect | null = null;
+          if (partnerTag.classList.contains("is-active") && fx.current.partnerSize.h) {
+            const size = fx.current.partnerSize;
+            const below = partnerAt.y - LABEL_GAP - size.h < bounds.top;
+            placedPartner = placeLabel(partnerAt.x, partnerAt.y, size, below, bounds);
+            applyRect(partnerTag, placedPartner);
+          }
+          const partnerRect = placedPartner;
+
+          if (selfTag.classList.contains("is-active") && fx.current.selfSize.h) {
+            const size = fx.current.selfSize;
+            const below = selfAt.y - LABEL_GAP - size.h < bounds.top;
+            const options = [
+              placeLabel(selfAt.x, selfAt.y, size, below, bounds),
+              placeLabel(selfAt.x, selfAt.y, size, !below, bounds),
+            ];
+            if (partnerRect) {
+              // Last resort: step sideways out of the partner's box entirely.
+              const aside =
+                selfAt.x <= partnerAt.x
+                  ? partnerRect.x - LABEL_GAP - size.w / 2
+                  : partnerRect.x + partnerRect.w + LABEL_GAP + size.w / 2;
+              options.push(placeLabel(aside, selfAt.y, size, below, bounds));
+              options.push(placeLabel(aside, selfAt.y, size, !below, bounds));
+            }
+            const chosen = partnerRect
+              ? options.reduce((best, option) =>
+                  overlapArea(best, partnerRect) <= overlapArea(option, partnerRect)
+                    ? best
+                    : option,
+                )
+              : options[0];
+            applyRect(selfTag, chosen);
           }
         }
 
@@ -362,15 +531,24 @@ export function SpotlightStage({
         }
         lockRef.current?.classList.remove("is-active");
         glintRef.current?.classList.remove("is-active");
-        captionRef.current?.classList.remove("is-active");
         rejectRef.current?.classList.remove("is-active");
+        fx.current.hoverId = null;
+        if (selfNameRef.current) {
+          selfNameRef.current.textContent = "";
+          selfNameRef.current.hidden = true;
+        }
       },
     }),
     [emitBurst],
   );
 
+  // Your light follows the pointer whenever the scene is on screen, including
+  // through the feedback pause between rounds. `interactive` governs whether the
+  // light can *commit* anything, not whether it moves: gating movement on it
+  // froze the spotlight while the round outcome was showing, and the first move
+  // after the next round began then snapped it across the room.
   const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    if (!interactive || !onMove) return;
+    if (!onMove) return;
     const bounds = event.currentTarget.getBoundingClientRect();
     onMove({
       x: Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width)),
@@ -406,26 +584,32 @@ export function SpotlightStage({
       <div ref={lockRef} className="sl-lock" aria-hidden="true">
         <span className="sl-lock-ring" />
       </div>
-      <div ref={captionRef} className="sl-caption" aria-hidden="true" />
       <div ref={rejectRef} className="sl-reject" aria-hidden="true" />
+
+      <div
+        ref={selfTagRef}
+        className={`sl-tag is-you${selfClue ? " is-active" : ""}`}
+        aria-hidden="true"
+      >
+        <span className="sl-tag-clue">{selfClue}</span>
+        <b ref={selfNameRef} className="sl-tag-name" hidden />
+      </div>
+
+      <div
+        ref={partnerTagRef}
+        className={`sl-tag is-partner${partnerLine ? " is-active" : ""}`}
+        aria-hidden="true"
+      >
+        {/* Keyed inner span so a new line replays the entrance without
+            remounting the box the size observer is watching. */}
+        <span key={partnerLine?.seq ?? "idle"} className="sl-tag-line">
+          {partnerLine ? <BotMessage line={partnerLine} /> : null}
+        </span>
+      </div>
 
       {/* Keyboard and assistive path: focusing an object moves your spotlight
           onto it, which is the same input a pointer provides. */}
-      <div className="sl-hit-layer">
-        {SPOTLIGHT_OBJECTS.map((object) => (
-          <button
-            key={object.id}
-            type="button"
-            className="sl-hit"
-            style={{ left: `${object.x * 100}%`, top: `${object.y * 100}%` }}
-            disabled={!interactive}
-            onFocus={() => onSnap?.(object.id, { x: object.x, y: object.y })}
-            onClick={() => onSnap?.(object.id, { x: object.x, y: object.y })}
-            aria-label={`Move your spotlight to the ${object.label.toLowerCase()}`}
-            data-testid={`spotlight-${object.id}`}
-          />
-        ))}
-      </div>
+      <HitLayer interactive={interactive} onSnap={onSnap} />
     </div>
   );
 }

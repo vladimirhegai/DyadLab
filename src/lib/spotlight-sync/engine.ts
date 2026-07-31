@@ -1,4 +1,4 @@
-import { SPOTLIGHT_OBJECTS, SPOTLIGHT_ROUNDS } from "./rounds";
+import { SPOTLIGHT_OBJECTS, type SpotlightRoundDefinition } from "./rounds";
 import {
   sceneDistance,
   type SpotlightObject,
@@ -28,11 +28,12 @@ export const ENGINE = {
   captureRadius: 0.11,
   /** Capture is only counted while the onset is recent. */
   captureWindowMs: 1500,
-  /** A wrong lock disables that object briefly so it cannot be spammed. */
-  falseLockCooldownMs: 1100,
+  /** A wrong lock disables that object so it cannot be re-tried on the rebound. */
+  falseLockCooldownMs: 2000,
   /** A round that is never solved resolves as a miss rather than stalling. */
   roundTimeoutMs: 42000,
-  feedbackMs: 1500,
+  /** Long enough to read the outcome before the next round takes the screen. */
+  feedbackMs: 2200,
   traceIntervalMs: 50,
 } as const;
 
@@ -75,6 +76,8 @@ export interface EngineRoundState {
 
 export interface EngineState {
   phase: "idle" | "playing" | "feedback" | "completed";
+  /** The session being played. Generated per playthrough, not a module constant. */
+  rounds: SpotlightRoundDefinition[];
   roundIndex: number;
   /** Milliseconds since the task started. */
   clockMs: number;
@@ -117,9 +120,11 @@ function emptyRound(index: number): EngineRoundState {
 export function createEngineState(
   self: SpotlightPoint,
   partner: SpotlightPoint,
+  rounds: SpotlightRoundDefinition[],
 ): EngineState {
   return {
     phase: "idle",
+    rounds,
     roundIndex: 0,
     clockMs: 0,
     self: { ...self },
@@ -171,7 +176,7 @@ function finishRound(
   point: SpotlightPoint | null,
   effects: EngineEffect[],
 ) {
-  const round = SPOTLIGHT_ROUNDS[state.round.index];
+  const round = state.rounds[state.round.index];
   const measures: SpotlightRoundMeasures = {
     roundIndex: state.round.index,
     roundId: round.id,
@@ -239,7 +244,7 @@ export function stepEngine(
   if (state.phase === "feedback") {
     if (state.clockMs >= state.feedbackUntilMs) {
       const next = state.roundIndex + 1;
-      if (next >= SPOTLIGHT_ROUNDS.length) {
+      if (next >= state.rounds.length) {
         state.phase = "completed";
         effects.push({ type: "task-completed", hits: state.hits });
       } else {
@@ -251,7 +256,7 @@ export function stepEngine(
 
   if (state.phase !== "playing") return state;
 
-  const round = SPOTLIGHT_ROUNDS[state.roundIndex];
+  const round = state.rounds[state.roundIndex];
   const target = SPOTLIGHT_OBJECTS.find((item) => item.id === round.targetId)!;
   const r = state.round;
   r.elapsedMs += dt;

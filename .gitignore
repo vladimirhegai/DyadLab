@@ -57,3 +57,10 @@ next-env.d.ts
 /.codex/
 /.gemini/
 /.impeccable/
+
+# internal project documentation (keep README.md public)
+/AGENTS.md
+/CLAUDE.md
+/DESIGN.md
+/PRODUCT.md
+/SPOTLIGHT_SYNC.md

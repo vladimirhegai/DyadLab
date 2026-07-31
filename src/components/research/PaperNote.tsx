@@ -58,6 +58,11 @@ export function PaperNote() {
                   Pereira &amp; Castelhano, 2019
                 </span>
               </a>
+              <p className="mt-2 text-xs leading-relaxed text-ink-muted">
+                In the game: every round, one object flashes. It is never the answer. What is
+                recorded is whether it pulled you, and whether it sat on a surface the target
+                could have been on.
+              </p>
             </li>
             <li className="border-t border-border pt-4">
               <a
