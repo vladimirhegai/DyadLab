@@ -44,19 +44,26 @@ export function DataSection() {
             <table className="w-full text-left text-[13px]">
               <thead>
                 <tr className="bg-bg-soft text-[11px] uppercase tracking-wide text-ink-muted">
-                  <th className="px-3 py-2.5 font-semibold">Timestamp</th>
+                  <th className="px-3 py-2.5 font-semibold">Elapsed</th>
+                  <th className="px-3 py-2.5 font-semibold">Round</th>
                   <th className="px-3 py-2.5 font-semibold">Participant</th>
                   <th className="px-3 py-2.5 font-semibold">Event</th>
-                  <th className="px-3 py-2.5 font-semibold">Value</th>
+                  <th className="px-3 py-2.5 font-semibold">Payload</th>
                 </tr>
               </thead>
               <tbody className="font-mono">
                 {SAMPLE_ROWS.map((row, index) => (
-                  <tr key={`${row.timestamp}-${row.event}`} className={index % 2 === 1 ? "bg-black/[0.015]" : ""}>
-                    <td className="px-3 py-2 text-ink-muted">{row.timestamp}</td>
+                  <tr key={row.event_id} className={index % 2 === 1 ? "bg-black/[0.015]" : ""}>
+                    <td className="px-3 py-2 text-ink-muted">{row.elapsed_ms} ms</td>
+                    <td className="px-3 py-2 text-ink-muted">{row.round || "—"}</td>
                     <td className="px-3 py-2 font-semibold text-accent-strong">{row.participant}</td>
                     <td className="px-3 py-2 text-ink">{row.event}</td>
-                    <td className="max-w-56 truncate px-3 py-2 text-ink-muted" title={row.value}>{row.value}</td>
+                    <td
+                      className="max-w-56 truncate px-3 py-2 text-ink-muted"
+                      title={JSON.stringify(row.payload)}
+                    >
+                      {JSON.stringify(row.payload)}
+                    </td>
                   </tr>
                 ))}
               </tbody>

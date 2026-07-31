@@ -6,7 +6,6 @@ import { ENGINE, objectUnder } from "@/lib/spotlight-sync/engine";
 import { getSpotlightObject, spokenSelfClue } from "@/lib/spotlight-sync/rounds";
 import {
   DEFAULT_SPOTLIGHT_POSITIONS,
-  sceneDistance,
   type SpotlightPoint,
   type SpotlightPositions,
   type SpotlightTaskState,
@@ -18,11 +17,9 @@ const MemoStage = memo(SpotlightStage);
 /**
  * The two-browser version of the task.
  *
- * Input is the same continuous hold: dwelling a spotlight on an object fills
- * the focus ring and then commits a `spotlight_select`. The server still owns
- * the outcome — it waits for both participants, compares their choices with the
- * target, and redacts the partner's choice until the round resolves — so this
- * component never decides whether a round was a hit.
+ * Input matches the bot experience: both spotlights must cover the same object
+ * while the focus ring fills. The server verifies that shared hold and owns the
+ * outcome, so this component never decides whether a round was a hit.
  */
 export function SpotlightLiveBoard({
   task,
@@ -79,12 +76,31 @@ export function SpotlightLiveBoard({
   });
 
   useEffect(() => {
+    if (task.status !== "active") {
+      stageRef.current?.apply({
+        p1:
+          viewerRef.current === "P01"
+            ? selfRef.current
+            : partnerRef.current,
+        p2:
+          viewerRef.current === "P01"
+            ? partnerRef.current
+            : selfRef.current,
+        hoverId: null,
+        lockId: null,
+        lockProgress: 0,
+        distractorId: null,
+        dt: 0,
+      });
+      return;
+    }
+
     let frame = 0;
     let last = performance.now();
     let lastShared: string | null = null;
 
     const tick = (now: number) => {
-      const dt = Math.min(now - last, 50);
+      const dt = Math.max(0, now - last);
       last = now;
       const self = selfRef.current;
       const other = partnerRef.current;
@@ -102,30 +118,33 @@ export function SpotlightLiveBoard({
         committedRef.current = null;
       }
 
+      const selfObject = objectUnder(self);
+      const partnerObject = objectUnder(other);
+      const sharedObject =
+        selfObject && partnerObject && selfObject.id === partnerObject.id
+          ? selfObject
+          : null;
+
       if (playingRef.current && !committedRef.current) {
-        const target = objectUnder(self);
-        if (target && target.id !== hold.blockedId) {
+        if (sharedObject && sharedObject.id !== hold.blockedId) {
           hold.blockedId = null;
-          if (hold.id !== target.id) {
-            hold.id = target.id;
+          if (hold.id !== sharedObject.id) {
+            hold.id = sharedObject.id;
             hold.progress = 0;
           }
           hold.progress = Math.min(1, hold.progress + dt / ENGINE.lockHoldMs);
           if (hold.progress >= 1) {
-            committedRef.current = target.id;
-            commit(target.id);
+            committedRef.current = sharedObject.id;
+            commit(sharedObject.id);
           }
         } else {
-          if (!target) hold.blockedId = null;
+          if (!sharedObject) hold.blockedId = null;
           hold.progress = Math.max(0, hold.progress - (dt / 1000) * ENGINE.lockDecayPerSecond);
           if (hold.progress === 0) hold.id = null;
         }
       }
 
-      const bothHere =
-        hold.id && sceneDistance(other, getSpotlightObject(hold.id)!) <= ENGINE.lockRadius
-          ? hold.id
-          : null;
+      const bothHere = sharedObject?.id ?? null;
       if (bothHere !== lastShared) {
         lastShared = bothHere;
         setSharedObjectId(bothHere);
@@ -134,11 +153,11 @@ export function SpotlightLiveBoard({
       stageRef.current?.apply({
         p1: viewerRef.current === "P01" ? self : other,
         p2: viewerRef.current === "P01" ? other : self,
-        hoverId: playingRef.current ? objectUnder(self)?.id ?? null : null,
+        hoverId: playingRef.current ? selfObject?.id ?? null : null,
         lockId: committedRef.current ?? hold.id,
         lockProgress: committedRef.current ? 1 : hold.progress,
         distractorId: null,
-        dt,
+        dt: Math.min(dt, 50),
       });
 
       frame = requestAnimationFrame(tick);
@@ -146,7 +165,17 @@ export function SpotlightLiveBoard({
 
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, []);
+  }, [task.status]);
+
+  useEffect(() => {
+    if (task.phase === "playing" && !ownSelection && committedRef.current) {
+      const blockedId = committedRef.current;
+      committedRef.current = null;
+      holdRef.current.id = null;
+      holdRef.current.progress = 0;
+      holdRef.current.blockedId = blockedId;
+    }
+  }, [ownSelection, task.phase]);
 
   useEffect(() => {
     if (task.phase === "feedback" && task.lastOutcome?.success) {
@@ -199,7 +228,7 @@ export function SpotlightLiveBoard({
             <p>
               Say it out loud — your partner knows{" "}
               <strong>{round.clue.kind === "object" ? "where" : "what"}</strong>. Hold your
-              spotlight on the object you agree on for half a second to commit.
+              spotlights together on the object you agree on until the ring fills.
             </p>
           </>
         ) : (
@@ -260,7 +289,7 @@ export function SpotlightLiveBoard({
                   : "Target found"
                 : "Focus did not match"}
             </strong>
-            <small>{task.lastOutcome.convergenceMs} ms between focus choices</small>
+            <small>{task.lastOutcome.convergenceMs} ms to first overlap</small>
           </div>
         )}
 

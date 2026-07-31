@@ -13,7 +13,12 @@ import {
   type SpotlightFeedbackMode,
   type SpotlightPositions,
 } from "@/lib/spotlight-sync/types";
-import { getBackendUrl, getWebSocketUrl } from "@/lib/live/config";
+import {
+  getBackendUrl,
+  getIceServers,
+  getWebSocketUrl,
+  sessionApiUrl,
+} from "@/lib/live/config";
 import {
   EMPTY_CONDITIONS,
   EMPTY_MEDIA_STATE,
@@ -238,9 +243,17 @@ function ParticipantControls({
   );
 }
 
-export function DashboardClient({ initialCode }: { initialCode?: string }) {
+export function DashboardClient({
+  initialCode,
+  initialToken,
+}: {
+  initialCode?: string;
+  initialToken?: string;
+}) {
   const backendUrl = getBackendUrl();
   const [code, setCode] = useState(initialCode?.toUpperCase() ?? "");
+  const [researcherToken, setResearcherToken] = useState(initialToken ?? "");
+  const [links, setLinks] = useState<Record<ParticipantId, string> | null>(null);
   const [presence, setPresence] = useState<PresenceState>(EMPTY_PRESENCE);
   const [conditions, setConditions] = useState<ConditionState>(EMPTY_CONDITIONS);
   const [mediaState, setMediaState] = useState<MediaState>(EMPTY_MEDIA_STATE);
@@ -251,8 +264,13 @@ export function DashboardClient({ initialCode }: { initialCode?: string }) {
   const [spotlightPositions, setSpotlightPositions] =
     useState<SpotlightPositions>(DEFAULT_SPOTLIGHT_POSITIONS);
   const [events, setEvents] = useState<DemoEvent[]>([]);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(
+    initialCode && !initialToken
+      ? "This dashboard link is missing its researcher credential. Create a new session from this page."
+      : "",
+  );
   const [creating, setCreating] = useState(false);
+  const [creatingMessage, setCreatingMessage] = useState("Creating…");
   const socketRef = useRef<WebSocket | null>(null);
   const monitorPeersRef = useRef<Record<ParticipantId, RTCPeerConnection | null>>({
     P01: null,
@@ -267,29 +285,35 @@ export function DashboardClient({ initialCode }: { initialCode?: string }) {
     () => window.location.origin,
     () => "",
   );
-  const links = useMemo(
-    () =>
-      code && origin
-        ? {
-            P01: `${origin}/session?code=${code}&participant=P01`,
-            P02: `${origin}/session?code=${code}&participant=P02`,
-          }
-        : null,
-    [code, origin],
-  );
+  const iceServers = useMemo(() => getIceServers(), []);
 
   useEffect(() => {
-    if (!code) return;
+    if (!code || links) return;
+    const stored = window.sessionStorage.getItem(
+      `dyadlab:${code}:participant-links`,
+    );
+    if (!stored) return;
+    try {
+      const storedLinks = JSON.parse(stored) as Record<ParticipantId, string>;
+      queueMicrotask(() => setLinks(storedLinks));
+    } catch {
+      window.sessionStorage.removeItem(`dyadlab:${code}:participant-links`);
+    }
+  }, [code, links]);
+
+  useEffect(() => {
+    if (!code || !researcherToken) return;
     let disposed = false;
     let reconnectTimer: number | undefined;
+    let reconnectAttempt = 0;
     const monitorPeers = monitorPeersRef.current;
     const monitorCandidates = monitorCandidatesRef.current;
 
     const loadSession = async () => {
       try {
         const [sessionResponse, eventResponse] = await Promise.all([
-          fetch(`${backendUrl}/sessions/${code}`),
-          fetch(`${backendUrl}/sessions/${code}/events`),
+          fetch(sessionApiUrl(`sessions/${code}`, researcherToken)),
+          fetch(sessionApiUrl(`sessions/${code}/events`, researcherToken)),
         ]);
         if (!sessionResponse.ok || !eventResponse.ok) {
           throw new Error("This session could not be found.");
@@ -304,15 +328,20 @@ export function DashboardClient({ initialCode }: { initialCode?: string }) {
         setSpotlightPositions(snapshot.spotlightPositions ?? DEFAULT_SPOTLIGHT_POSITIONS);
         setEvents(persistedEvents);
         setError("");
+        return true;
       } catch (sessionError) {
         if (!disposed) {
           setError(sessionError instanceof Error ? sessionError.message : "Could not load the session.");
         }
+        return false;
       }
     };
 
     const connect = () => {
-      const socket = new WebSocket(`${getWebSocketUrl()}/ws/${code}?role=researcher`);
+      const socketUrl = new URL(`${getWebSocketUrl()}/ws/${code}`);
+      socketUrl.searchParams.set("role", "researcher");
+      socketUrl.searchParams.set("token", researcherToken);
+      const socket = new WebSocket(socketUrl);
       socketRef.current = socket;
 
       const closeMonitor = (participant: ParticipantId) => {
@@ -337,7 +366,7 @@ export function DashboardClient({ initialCode }: { initialCode?: string }) {
         if (payload.description?.type === "offer") {
           closeMonitor(participant);
           peer = new RTCPeerConnection({
-            iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+            iceServers,
           });
           monitorPeersRef.current[participant] = peer;
           peer.ontrack = (trackEvent) => {
@@ -452,17 +481,34 @@ export function DashboardClient({ initialCode }: { initialCode?: string }) {
         }
       };
 
-      socket.onopen = () => setError("");
-      socket.onclose = () => {
+      socket.onopen = () => {
+        reconnectAttempt = 0;
+        setError("");
+      };
+      socket.onclose = (event) => {
         if (!disposed) {
-          reconnectTimer = window.setTimeout(connect, 1500);
+          if ([4403, 4404, 4410].includes(event.code)) {
+            setError(
+              event.code === 4410
+                ? "This session has expired."
+                : "The researcher credential is no longer valid.",
+            );
+            return;
+          }
+          const delay = Math.min(15_000, 1000 * 2 ** reconnectAttempt);
+          reconnectAttempt += 1;
+          setError(
+            `The live control channel disconnected. Reconnecting in ${Math.round(delay / 1000)}s…`,
+          );
+          reconnectTimer = window.setTimeout(connect, delay);
         }
       };
       socket.onerror = () => setError("The live session service is unavailable.");
     };
 
-    void loadSession();
-    connect();
+    void loadSession().then((loaded) => {
+      if (!disposed && loaded) connect();
+    });
 
     return () => {
       disposed = true;
@@ -475,20 +521,44 @@ export function DashboardClient({ initialCode }: { initialCode?: string }) {
         monitorCandidates[participant] = [];
       });
     };
-  }, [backendUrl, code]);
+  }, [backendUrl, code, iceServers, researcherToken]);
 
   const createSession = async () => {
     setCreating(true);
+    setCreatingMessage("Creating…");
     setError("");
+    const controller = new AbortController();
+    const slowTimer = window.setTimeout(
+      () =>
+        setCreatingMessage(
+          "Waking the secure session service… this can take up to 30 seconds.",
+        ),
+      5000,
+    );
+    const timeoutTimer = window.setTimeout(() => controller.abort(), 45_000);
     try {
       const response = await fetch(`${backendUrl}/sessions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ join_base_url: window.location.origin }),
+        body: JSON.stringify({ join_base_url: origin || window.location.origin }),
+        signal: controller.signal,
       });
-      if (!response.ok) throw new Error("Could not create a session.");
+      if (response.status === 429) {
+        throw new Error(
+          "Too many sessions were created recently. Wait one minute and try again.",
+        );
+      }
+      if (!response.ok) {
+        throw new Error("The secure session service could not create a session.");
+      }
       const session = (await response.json()) as CreatedSession;
       setCode(session.code);
+      setResearcherToken(session.researcher_token);
+      setLinks(session.participant_urls);
+      window.sessionStorage.setItem(
+        `dyadlab:${session.code}:participant-links`,
+        JSON.stringify(session.participant_urls),
+      );
       setEvents([]);
       setPresence(EMPTY_PRESENCE);
       setConditions(EMPTY_CONDITIONS);
@@ -496,15 +566,54 @@ export function DashboardClient({ initialCode }: { initialCode?: string }) {
       setMonitorStreams({ P01: null, P02: null });
       setSpotlightTask(EMPTY_SPOTLIGHT_LIVE_TASK);
       setSpotlightPositions(DEFAULT_SPOTLIGHT_POSITIONS);
-      window.history.replaceState({}, "", `/dashboard?code=${session.code}`);
+      window.history.replaceState(
+        {},
+        "",
+        `/dashboard?code=${session.code}&token=${encodeURIComponent(session.researcher_token)}`,
+      );
     } catch (createError) {
       setError(
-        createError instanceof Error
-          ? createError.message
-          : "Could not reach the live session service.",
+        createError instanceof DOMException && createError.name === "AbortError"
+          ? "The session service did not respond within 45 seconds. Please try again."
+          : createError instanceof Error
+            ? createError.message
+            : "Could not reach the live session service.",
       );
     } finally {
+      window.clearTimeout(slowTimer);
+      window.clearTimeout(timeoutTimer);
       setCreating(false);
+      setCreatingMessage("Creating…");
+    }
+  };
+
+  const deleteSession = async () => {
+    if (!code || !researcherToken) return;
+    const confirmed = window.confirm(
+      "Delete this session and all of its stored events? This cannot be undone.",
+    );
+    if (!confirmed) return;
+    try {
+      const response = await fetch(
+        sessionApiUrl(`sessions/${code}`, researcherToken),
+        { method: "DELETE" },
+      );
+      if (!response.ok) {
+        throw new Error("The session data could not be deleted.");
+      }
+      window.sessionStorage.removeItem(`dyadlab:${code}:participant-links`);
+      setCode("");
+      setResearcherToken("");
+      setLinks(null);
+      setEvents([]);
+      setPresence(EMPTY_PRESENCE);
+      window.history.replaceState({}, "", "/dashboard");
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : "The session data could not be deleted.",
+      );
     }
   };
 
@@ -559,7 +668,7 @@ export function DashboardClient({ initialCode }: { initialCode?: string }) {
           </div>
         )}
 
-        {!code ? (
+        {!code || !researcherToken ? (
           <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_320px]">
           <section className="card-surface p-6 md:p-8">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">New study session</p>
@@ -576,6 +685,11 @@ export function DashboardClient({ initialCode }: { initialCode?: string }) {
             >
               {creating ? "Creating…" : "Create Session"}
             </Button>
+            {creating && (
+              <p role="status" className="mt-3 text-xs text-ink-muted">
+                {creatingMessage}
+              </p>
+            )}
           </section>
           <aside className="card-surface p-6">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">What happens next</p>
@@ -607,15 +721,26 @@ export function DashboardClient({ initialCode }: { initialCode?: string }) {
                       : "Share one private link with each participant."}
                   </span>
                 </div>
-                <Button size="sm" variant="ghost" onClick={createSession} disabled={creating}>
-                  New session
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" variant="ghost" onClick={createSession} disabled={creating}>
+                    {creating ? "Creating…" : "New session"}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => void deleteSession()}>
+                    Delete session data
+                  </Button>
+                </div>
               </div>
               {links && !bothParticipantsConnected && (
                 <div className="mt-3 grid gap-2 border-t border-border pt-3">
                   <CopyableLink participant="P01" url={links.P01} />
                   <CopyableLink participant="P02" url={links.P02} />
                 </div>
+              )}
+              {!links && !bothParticipantsConnected && (
+                <p className="mt-3 border-t border-border pt-3 text-xs text-ink-muted">
+                  Participant credentials are shown only in the browser that created
+                  the session. Create a new session if those private links were lost.
+                </p>
               )}
             </section>
 
@@ -748,21 +873,28 @@ export function DashboardClient({ initialCode }: { initialCode?: string }) {
 
             <section className="flex flex-wrap items-center justify-between gap-4 border-t border-border px-1 pt-4">
               <p className="max-w-2xl text-xs leading-relaxed text-ink-muted">
-                Media is peer-to-peer and never recorded. The persisted log contains presence,
-                media availability, researcher conditions, focus positions, and task outcomes.
+                Media is peer-to-peer and never recorded. The pseudonymous event log stores
+                researcher conditions, 10 Hz focus-path samples, task outcomes, and exact
+                millisecond timing. Sessions expire after 24 hours unless the server policy is changed.
               </p>
               <div className="flex gap-2">
                 <ButtonLink
                   size="sm"
                   variant="secondary"
-                  href={`${backendUrl}/sessions/${code}/events.csv`}
+                  href={sessionApiUrl(
+                    `sessions/${code}/events.csv`,
+                    researcherToken,
+                  )}
                 >
                   Download CSV
                 </ButtonLink>
                 <ButtonLink
                   size="sm"
                   variant="secondary"
-                  href={`${backendUrl}/sessions/${code}/events.json`}
+                  href={sessionApiUrl(
+                    `sessions/${code}/events.json`,
+                    researcherToken,
+                  )}
                 >
                   Download JSON
                 </ButtonLink>

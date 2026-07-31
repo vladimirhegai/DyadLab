@@ -39,13 +39,20 @@
 
 .home-hero-kicker {
   width: fit-content;
-  margin-bottom: 1.25rem;
+  margin-bottom: 0.45rem;
   color: #f6d6ec;
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.12em;
   line-height: 1.4;
   text-transform: uppercase;
+}
+
+.home-hero-byline {
+  margin-bottom: 1.25rem;
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 0.9rem;
+  font-weight: 600;
 }
 
 .home-hero h1 {

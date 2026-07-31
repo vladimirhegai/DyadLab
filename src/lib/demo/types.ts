@@ -12,22 +12,16 @@ export type EventActor = "researcher" | ParticipantId | "session";
 
 export type EventType =
   | "joined_session"
+  | "media_state"
   | "video_condition"
   | "self_view"
-  | "feedback_condition"
-  | "task_started"
-  | "task_stopped"
-  | "round_started"
-  | "signal_selected"
-  | "joint_target_found"
-  | "joint_target_missed"
-  | "task_completed"
   | "spotlight_context_condition"
   | "spotlight_feedback_condition"
   | "spotlight_communication_condition"
   | "spotlight_task_started"
   | "spotlight_task_stopped"
   | "spotlight_round_started"
+  | "spotlight_position_sample"
   | "spotlight_focus"
   | "spotlight_converged"
   | "spotlight_distractor_onset"
@@ -39,16 +33,15 @@ export type EventType =
 
 export interface DemoEvent {
   id: string;
+  sequence?: number;
+  sessionCode?: string;
+  schemaVersion?: number;
   elapsedMs: number;
   timestamp: string;
+  recordedAt?: string;
+  round?: number | null;
   actor: EventActor;
   type: EventType;
+  payload?: Record<string, unknown>;
   value: string;
-}
-
-export interface DemoState {
-  demoStartedAt: number;
-  participants: Record<ParticipantId, ParticipantState>;
-  task: import("@/lib/signal-sync/types").SignalTaskState;
-  events: DemoEvent[];
 }

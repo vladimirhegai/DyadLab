@@ -1,6 +1,4 @@
 import type { DemoEvent, ParticipantId, VideoCondition } from "@/lib/demo/types";
-import { EMPTY_SIGNAL_TASK } from "@/lib/signal-sync/types";
-import type { SignalTaskState } from "@/lib/signal-sync/types";
 import {
   EMPTY_SPOTLIGHT_TASK,
   type SpotlightPoint,
@@ -21,13 +19,16 @@ export interface ParticipantMedia {
 }
 export type MediaState = Record<ParticipantId, ParticipantMedia>;
 
-export type LiveTaskState = SignalTaskState;
 export type LiveSpotlightTaskState = SpotlightTaskState;
 
 export interface CreatedSession {
   code: string;
   created_at: string;
+  expires_at: string;
   status: string;
+  protocol_version: string;
+  researcher_token: string;
+  researcher_url: string;
   participant_urls: Record<ParticipantId, string>;
   join_urls: string[];
 }
@@ -37,10 +38,11 @@ export interface SessionSnapshot {
   created_at: string;
   status: string;
   event_count: number;
+  expires_at?: string;
+  protocol_version?: string;
   presence: PresenceState;
   conditions: ConditionState;
   mediaState: MediaState;
-  task: LiveTaskState;
   spotlightTask?: LiveSpotlightTaskState;
   spotlightPositions?: SpotlightPositions;
 }
@@ -54,7 +56,6 @@ export type ServerMessage =
       presence: PresenceState;
       conditions: ConditionState;
       mediaState: MediaState;
-      task: LiveTaskState;
       spotlightTask?: LiveSpotlightTaskState;
       spotlightPositions?: SpotlightPositions;
     }
@@ -84,10 +85,6 @@ export type ServerMessage =
       camera: boolean;
       microphone: boolean;
       mediaState: MediaState;
-    }
-  | {
-      type: "task_state";
-      task: LiveTaskState;
     }
   | {
       type: "spotlight_task_state";
@@ -135,14 +132,6 @@ export const EMPTY_MEDIA_STATE: MediaState = {
 export const EMPTY_CONDITIONS: ConditionState = {
   P01: { videoCondition: "normal", selfViewHidden: false },
   P02: { videoCondition: "normal", selfViewHidden: false },
-};
-
-export const EMPTY_TASK: LiveTaskState = {
-  ...EMPTY_SIGNAL_TASK,
-  selections: { ...EMPTY_SIGNAL_TASK.selections },
-  selectionTimes: { ...EMPTY_SIGNAL_TASK.selectionTimes },
-  stats: { ...EMPTY_SIGNAL_TASK.stats },
-  history: [],
 };
 
 export const EMPTY_SPOTLIGHT_LIVE_TASK: LiveSpotlightTaskState = {

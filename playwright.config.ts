@@ -1,6 +1,13 @@
 import { defineConfig } from "@playwright/test";
+import { existsSync } from "node:fs";
 
-const pythonExecutable = process.env.DYADLAB_PYTHON || "python";
+const localPython =
+  process.platform === "win32"
+    ? ".venv/Scripts/python.exe"
+    : ".venv/bin/python";
+const pythonExecutable =
+  process.env.DYADLAB_PYTHON ||
+  (existsSync(localPython) ? localPython : "python");
 
 export default defineConfig({
   testDir: "./tests/e2e",

@@ -4,7 +4,7 @@ const TILES = [
   {
     label: "Project",
     value: "DyadLab",
-    detail: "A research-software prototype for controlled virtual-interaction studies.",
+    detail: "Built by Vladimir Hegai, Queen's Computer Engineering.",
     tone: "accent" as const,
   },
   {

@@ -85,7 +85,9 @@ test("two participants complete a researcher-controlled live session", async ({
     const p01Link = await dashboard.getByTestId("p01-link").inputValue();
     const p02Link = await dashboard.getByTestId("p02-link").inputValue();
     const code = new URL(p01Link).searchParams.get("code");
+    const researcherToken = new URL(dashboard.url()).searchParams.get("token");
     expect(code).toMatch(/^[A-Z2-9]{6}$/);
+    expect(researcherToken).toBeTruthy();
 
     const p01 = await p01Context.newPage();
     const p02 = await p02Context.newPage();
@@ -153,11 +155,11 @@ test("two participants complete a researcher-controlled live session", async ({
     await expect(dashboard.getByText("spotlight_task_completed", { exact: true })).toBeVisible();
 
     const exportResponse = await request.get(
-      `http://127.0.0.1:8000/sessions/${code}/events.csv`,
+      `http://127.0.0.1:8000/sessions/${code}/events.csv?token=${encodeURIComponent(researcherToken!)}`,
     );
     expect(exportResponse.ok()).toBeTruthy();
     expect((await exportResponse.text()).split("\n")[0]).toBe(
-      '"timestamp","participant","event","value"',
+      '"schema_version","session_code","event_id","sequence","elapsed_ms","recorded_at_utc","round","participant","event","payload_json","value"',
     );
   } finally {
     await Promise.all([
@@ -166,6 +168,21 @@ test("two participants complete a researcher-controlled live session", async ({
       p02Context.close(),
     ]);
   }
+});
+
+test("the simulated partner clue stays private in both guidance modes", async ({
+  page,
+}) => {
+  await page.goto("/spotlight-sync");
+  await page.getByTestId("start-spotlight-demo").click();
+  await expect(page.getByTestId("partner-private-clue-state")).toHaveText(
+    "Listen for their clue",
+  );
+
+  await page.getByRole("button", { name: "Silent" }).click();
+  await expect(page.getByTestId("partner-private-clue-state")).toHaveText(
+    "Follow their spotlight",
+  );
 });
 
 test("participants can join without camera or microphone", async ({ browser }) => {

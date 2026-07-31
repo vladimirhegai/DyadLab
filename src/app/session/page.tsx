@@ -13,6 +13,7 @@ export default async function SessionPage({
   searchParams: Promise<{
     code?: string | string[];
     participant?: string | string[];
+    token?: string | string[];
   }>;
 }) {
   const query = await searchParams;
@@ -21,11 +22,14 @@ export default async function SessionPage({
     query.participant === "P01" || query.participant === "P02"
       ? (query.participant as ParticipantId)
       : undefined;
+  const initialToken =
+    typeof query.token === "string" ? query.token : undefined;
 
   return (
     <SessionClient
       initialCode={initialCode}
       initialParticipant={initialParticipant}
+      initialToken={initialToken}
     />
   );
 }

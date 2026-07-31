@@ -263,11 +263,11 @@ export function stepEngine(
 
   // --- continuous measures -------------------------------------------------
   const separation = sceneDistance(state.self, state.partner);
-  r.separationSum += separation;
-  r.separationSamples += 1;
-  r.dwellSamples += 1;
+  r.separationSum += separation * dt;
+  r.separationSamples += dt;
+  r.dwellSamples += dt;
   const selfSurface = state.self.y < 0.42 ? "upper" : state.self.y < 0.72 ? "mid" : "lower";
-  if (selfSurface === target.surface) r.relevantSamples += 1;
+  if (selfSurface === target.surface) r.relevantSamples += dt;
 
   if (r.convergenceMs === null && separation <= ENGINE.overlapRadius) {
     r.convergenceMs = Math.round(r.elapsedMs);
@@ -279,10 +279,10 @@ export function stepEngine(
   }
 
   r.traceAccumulatorMs += dt;
-  if (r.traceAccumulatorMs >= ENGINE.traceIntervalMs) {
-    r.traceAccumulatorMs = 0;
+  while (r.traceAccumulatorMs >= ENGINE.traceIntervalMs) {
+    r.traceAccumulatorMs -= ENGINE.traceIntervalMs;
     r.samples.push({
-      t: Math.round(r.elapsedMs),
+      t: Math.round(r.elapsedMs - r.traceAccumulatorMs),
       p1: { x: state.self.x, y: state.self.y },
       p2: { x: state.partner.x, y: state.partner.y },
     });

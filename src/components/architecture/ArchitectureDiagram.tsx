@@ -34,14 +34,14 @@ export function ArchitectureDiagram() {
           <Stage title="Participant A" dot="var(--color-accent)" />
           <Stage title="Participant B" dot="var(--color-magenta)" />
         </div>
-        <Connector label="WebRTC audio / video" />
-        <Stage title="React application" subtitle="TypeScript, browser client" dot="var(--color-accent)" />
-        <Connector label="WebSocket / REST API" />
-        <Stage title="FastAPI backend" subtitle="session + signaling logic" dot="var(--color-magenta)" />
+        <Connector label="Peer-to-peer WebRTC media" />
+        <Stage title="React clients" subtitle="TypeScript · role-scoped invitations" dot="var(--color-accent)" />
+        <Connector label="Authenticated WebSocket / REST" />
+        <Stage title="FastAPI service" subtitle="authoritative task + signaling" dot="var(--color-magenta)" />
         <Connector label="" />
         <div className="grid grid-cols-2 gap-x-4">
-          <Stage title="Session data" subtitle="SQLite" dot="var(--color-accent)" />
-          <Stage title="Media metadata" subtitle="secure storage" dot="var(--color-magenta)" />
+          <Stage title="Event data" subtitle="SQLite · schema v2" dot="var(--color-accent)" />
+          <Stage title="Media" subtitle="never stored" dot="var(--color-magenta)" />
         </div>
       </div>
     </div>

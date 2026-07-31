@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { SPOTLIGHT_OBJECTS, SPOTLIGHT_OBJECT_BY_ID } from "@/lib/spotlight-sync/rounds";
 import type {
   SpotlightRoundMeasures,
@@ -39,6 +39,7 @@ export function SpotlightTrace({
   measures: SpotlightRoundMeasures[];
 }) {
   const [active, setActive] = useState(0);
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   if (!traces.length) {
     return (
@@ -59,6 +60,11 @@ export function SpotlightTrace({
   const trace = traces[index];
   const measure = measures[index];
   const target = SPOTLIGHT_OBJECT_BY_ID.get(trace.targetId);
+  const selectTab = (nextIndex: number) => {
+    const normalized = (nextIndex + traces.length) % traces.length;
+    setActive(normalized);
+    tabRefs.current[normalized]?.focus();
+  };
 
   return (
     <div className="card-surface overflow-hidden">
@@ -75,10 +81,34 @@ export function SpotlightTrace({
           {traces.map((item, itemIndex) => (
             <button
               key={item.roundIndex}
+              ref={(element) => {
+                tabRefs.current[itemIndex] = element;
+              }}
               type="button"
               role="tab"
+              id={`spotlight-trace-tab-${itemIndex}`}
+              aria-controls={`spotlight-trace-panel-${itemIndex}`}
               aria-selected={itemIndex === index}
+              tabIndex={itemIndex === index ? 0 : -1}
               onClick={() => setActive(itemIndex)}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+                  event.preventDefault();
+                  selectTab(itemIndex + 1);
+                } else if (
+                  event.key === "ArrowLeft" ||
+                  event.key === "ArrowUp"
+                ) {
+                  event.preventDefault();
+                  selectTab(itemIndex - 1);
+                } else if (event.key === "Home") {
+                  event.preventDefault();
+                  selectTab(0);
+                } else if (event.key === "End") {
+                  event.preventDefault();
+                  selectTab(traces.length - 1);
+                }
+              }}
               className={`rounded-full px-3 py-1 text-[11px] font-semibold transition-colors ${
                 itemIndex === index
                   ? "bg-accent text-white"
@@ -91,7 +121,13 @@ export function SpotlightTrace({
         </div>
       </div>
 
-      <div className="mt-4 grid gap-5 px-5 pb-5 lg:grid-cols-[1.35fr_1fr]">
+      <div
+        id={`spotlight-trace-panel-${index}`}
+        role="tabpanel"
+        aria-labelledby={`spotlight-trace-tab-${index}`}
+        tabIndex={0}
+        className="mt-4 grid gap-5 px-5 pb-5 lg:grid-cols-[1.35fr_1fr]"
+      >
         <div className="sl-trace">
           <svg viewBox="0 0 1000 620" role="img" aria-label={`Spotlight paths for round ${index + 1}`}>
             <rect width="1000" height="620" rx="10" fill="#faf1f7" />

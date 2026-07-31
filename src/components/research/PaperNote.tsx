@@ -59,7 +59,7 @@ export function PaperNote() {
                 </span>
               </a>
               <p className="mt-2 text-xs leading-relaxed text-ink-muted">
-                In the game: every round, one object flashes. It is never the answer. What is
+                In the bot demo: every round, one object flashes. It is never the answer. What is
                 recorded is whether it pulled you, and whether it sat on a surface the target
                 could have been on.
               </p>

@@ -10,7 +10,7 @@ export function SiteNav() {
   return (
     <header className="sticky top-0 z-50 border-b border-border/70 bg-bg">
       <nav className="section-shell flex h-16 items-center justify-between">
-        <Link href="#top" className="flex items-center gap-2.5 text-[16px] font-semibold tracking-tight text-ink">
+        <Link href="#top" className="flex min-h-11 items-center gap-2.5 text-[16px] font-semibold tracking-tight text-ink">
           <span className="dyad-mark" aria-hidden="true">
             <span />
             <span />
@@ -20,7 +20,10 @@ export function SiteNav() {
         <ul className="flex items-center gap-5 text-sm font-medium text-ink-muted">
           {LINKS.map((link) => (
             <li key={link.href} className={link.showMobile ? "block" : "hidden sm:block"}>
-              <Link href={link.href} className="transition-colors hover:text-magenta">
+              <Link
+                href={link.href}
+                className="inline-flex min-h-11 items-center transition-colors hover:text-magenta"
+              >
                 {link.label}
               </Link>
             </li>
@@ -28,7 +31,7 @@ export function SiteNav() {
           <li>
             <Link
               href="/spotlight-sync"
-              className="rounded-full bg-accent px-4 py-2 font-semibold text-white shadow-[0_4px_14px_-5px_rgba(122,15,140,0.65)] transition-colors hover:bg-accent-strong"
+              className="inline-flex min-h-11 items-center rounded-full bg-accent px-4 font-semibold text-white shadow-[0_4px_14px_-5px_rgba(122,15,140,0.65)] transition-colors hover:bg-accent-strong"
             >
               <span className="sm:hidden">Play</span>
               <span className="hidden sm:inline">Try the demo</span>

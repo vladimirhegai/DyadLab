@@ -3,10 +3,10 @@ import { Badge } from "@/components/ui/Badge";
 
 const CONSIDERATIONS = [
   "Pseudonymous participant identifiers, never names, in stored data",
-  "Explicit recording state visible in the UI whenever capture is active",
-  "Configurable data retention windows per study",
-  "Missing-data detection on incomplete sessions",
-  "Session-completion checks before data is marked analysis-ready",
+  "Peer-to-peer media is never recorded or stored by the prototype",
+  "Server-configurable session expiry plus researcher-controlled deletion",
+  "Event sequence, schema version, and exact timing support quality-control checks",
+  "Incomplete and timed-out rounds remain explicit in the event stream",
   "No automated psychological conclusions drawn from behavioral signals",
 ];
 

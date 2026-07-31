@@ -9,9 +9,16 @@ export const metadata: Metadata = {
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ code?: string | string[] }>;
+  searchParams: Promise<{
+    code?: string | string[];
+    token?: string | string[];
+  }>;
 }) {
   const query = await searchParams;
   const initialCode = typeof query.code === "string" ? query.code : undefined;
-  return <DashboardClient initialCode={initialCode} />;
+  const initialToken =
+    typeof query.token === "string" ? query.token : undefined;
+  return (
+    <DashboardClient initialCode={initialCode} initialToken={initialToken} />
+  );
 }

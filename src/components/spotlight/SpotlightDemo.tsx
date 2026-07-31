@@ -3,6 +3,7 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { EventTimeline } from "@/components/demo/EventTimeline";
 import { Button } from "@/components/ui/Button";
+import { parseEventValue } from "@/lib/demo/export";
 import type { DemoEvent, EventType } from "@/lib/demo/types";
 import {
   BOT_PRIORITY,
@@ -114,6 +115,7 @@ export function SpotlightDemo() {
   const botRef = useRef<BotState | null>(null);
   const pointerRef = useRef<SpotlightPoint>({ ...DEFAULT_SPOTLIGHT_POSITIONS.P01! });
   const eventSeq = useRef(0);
+  const sessionStartedAtRef = useRef(0);
   const botSeqRef = useRef(-1);
   const botSpeakingRef = useRef(false);
   const hudAtRef = useRef(0);
@@ -132,12 +134,23 @@ export function SpotlightDemo() {
         ...current,
         ...entries.map((entry) => {
           eventSeq.current += 1;
+          const payload = parseEventValue(entry.value);
+          const eventRound =
+            typeof payload.round === "number" ? payload.round : null;
           return {
             id: `spotlight-demo-${eventSeq.current}`,
+            sequence: eventSeq.current,
+            sessionCode: "DEMO",
+            schemaVersion: 2,
             elapsedMs: Math.round(entry.at),
             timestamp: formatClock(entry.at),
+            recordedAt: new Date(
+              sessionStartedAtRef.current + entry.at,
+            ).toISOString(),
+            round: eventRound,
             actor: entry.actor,
             type: entry.type,
+            payload,
             value: entry.value,
           } satisfies DemoEvent;
         }),
@@ -176,6 +189,7 @@ export function SpotlightDemo() {
     botRef.current = bot;
     botSeqRef.current = -1;
     eventSeq.current = 0;
+    sessionStartedAtRef.current = Date.now();
     stageRef.current?.reset();
     dwellRef.current = { id: null, ms: 0, warned: new Set() };
     setEvents([]);
@@ -340,7 +354,7 @@ export function SpotlightDemo() {
     let last = performance.now();
 
     const tick = (now: number) => {
-      const dt = Math.min(now - last, 50);
+      const dt = Math.max(0, now - last);
       last = now;
       const engine = engineRef.current;
       const bot = botRef.current;
@@ -584,7 +598,13 @@ export function SpotlightDemo() {
               <span>
                 <b>{partnerClue.shortLabel}</b> your partner knows
               </span>
-              <strong>{active ? partnerClue.label : "They will tell you"}</strong>
+              <strong data-testid="partner-private-clue-state">
+                {active
+                  ? partnerGuidance === "silent"
+                    ? "Follow their spotlight"
+                    : "Listen for their clue"
+                  : "They will tell you"}
+              </strong>
             </div>
           </div>
 

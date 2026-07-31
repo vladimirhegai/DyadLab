@@ -30,7 +30,13 @@ export function EventTimeline({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    const reduceMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    scrollRef.current?.scrollTo({
+      top: scrollRef.current.scrollHeight,
+      behavior: reduceMotion ? "auto" : "smooth",
+    });
   }, [events.length]);
 
   return (
@@ -62,7 +68,13 @@ export function EventTimeline({
           </Button>
         </div>
       </div>
-      <div ref={scrollRef} className={`${bodyClassName} overflow-y-auto rounded-xl bg-bg-soft p-3 font-mono text-[12px] leading-relaxed`}>
+      <div
+        ref={scrollRef}
+        role="log"
+        aria-live="polite"
+        aria-relevant="additions"
+        className={`${bodyClassName} overflow-y-auto rounded-xl bg-bg-soft p-3 font-mono text-[12px] leading-relaxed`}
+      >
         {events.length === 0 && <p className="text-ink-muted">{emptyMessage}</p>}
         {events.map((e) =>
           compact ? (

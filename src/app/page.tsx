@@ -1,8 +1,11 @@
 import { ClosingSection } from "@/components/closing/ClosingSection";
+import { ArchitectureSection } from "@/components/architecture/ArchitectureSection";
+import { DataSection } from "@/components/data/DataSection";
 import { SiteFooter } from "@/components/footer/SiteFooter";
 import { HeroSpotlightPreview } from "@/components/hero/HeroSpotlightPreview";
 import { SiteNav } from "@/components/nav/SiteNav";
 import { PaperNote } from "@/components/research/PaperNote";
+import { ResearchConsiderations } from "@/components/research/ResearchConsiderations";
 import { ButtonLink } from "@/components/ui/Button";
 import { WorkflowSection } from "@/components/workflow/WorkflowSection";
 import "./home.css";
@@ -18,12 +21,15 @@ export default function Home() {
               <p className="home-hero-kicker">
                 A working virtual-interaction research prototype
               </p>
+              <p className="home-hero-byline">
+                Built by Vladimir Hegai · Queen&apos;s Computer Engineering
+              </p>
               <h1>
                 Study what happens when <span>two people look together.</span>
               </h1>
               <p className="home-hero-lede">
                 Configure a two-person session, play a collaborative visual-search game,
-                and export every timestamped behavior for analysis.
+                and export a schema-versioned behavioral event log.
               </p>
               <div className="home-hero-actions">
                 <ButtonLink
@@ -52,7 +58,10 @@ export default function Home() {
         </section>
 
         <WorkflowSection />
+        <ArchitectureSection />
+        <DataSection />
         <PaperNote />
+        <ResearchConsiderations />
         <ClosingSection />
       </main>
       <SiteFooter />

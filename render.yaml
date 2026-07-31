@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: dyadlab-api
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./backend/Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: DYADLAB_DATABASE_PATH
+        value: /data/dyadlab.db
+      - key: DYADLAB_ALLOWED_ORIGINS
+        sync: false
+      - key: DYADLAB_SESSION_TTL_HOURS
+        value: "24"
+      - key: DYADLAB_CREATE_RATE_LIMIT
+        value: "12"
+    disk:
+      name: dyadlab-data
+      mountPath: /data
+      sizeGB: 1

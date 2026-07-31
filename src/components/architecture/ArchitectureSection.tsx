@@ -13,11 +13,11 @@ const DECISIONS = [
   },
   {
     title: "Structured data",
-    description: "Every event is timestamped and tied to a pseudonymous participant ID, not a name.",
+    description: "Schema-versioned events carry exact time, sequence, round, typed payloads, and pseudonymous IDs.",
   },
   {
-    title: "Reliability",
-    description: "Automated browser testing and session-validation checks guard the core interaction flow.",
+    title: "Role-scoped access",
+    description: "Hashed, expiring researcher and participant credentials keep clues and controls separated.",
   },
 ];
 

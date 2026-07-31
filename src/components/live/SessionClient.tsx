@@ -11,7 +11,7 @@ import {
   type SpotlightPoint,
   type SpotlightPositions,
 } from "@/lib/spotlight-sync/types";
-import { getWebSocketUrl } from "@/lib/live/config";
+import { getIceServers, getWebSocketUrl } from "@/lib/live/config";
 import { createConditionedMedia, type ConditionedMedia } from "@/lib/live/media";
 import {
   EMPTY_SPOTLIGHT_LIVE_TASK,
@@ -46,12 +46,15 @@ function participantState(
 export function SessionClient({
   initialCode,
   initialParticipant,
+  initialToken,
 }: {
   initialCode?: string;
   initialParticipant?: ParticipantId;
+  initialToken?: string;
 }) {
   const [code, setCode] = useState(initialCode?.toUpperCase() ?? "");
   const [participant, setParticipant] = useState<ParticipantId>(initialParticipant ?? "P01");
+  const [token, setToken] = useState(initialToken ?? "");
   const [phase, setPhase] = useState<Phase>("ready");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -77,6 +80,9 @@ export function SessionClient({
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
   const leavingRef = useRef(false);
   const lastSpotlightSentRef = useRef(0);
+  const connectionTimerRef = useRef<number | null>(null);
+  const iceServers = useMemo(() => getIceServers(), []);
+  const invitationLocked = Boolean(initialCode && initialParticipant && initialToken);
 
   const peerParticipant: ParticipantId = participant === "P01" ? "P02" : "P01";
 
@@ -140,8 +146,11 @@ export function SessionClient({
     [sendSignal],
   );
 
-  const stopSession = useCallback(() => {
-    leavingRef.current = true;
+  const releaseResources = useCallback(() => {
+    if (connectionTimerRef.current !== null) {
+      window.clearTimeout(connectionTimerRef.current);
+      connectionTimerRef.current = null;
+    }
     socketRef.current?.close();
     peerRef.current?.close();
     monitorPeerRef.current?.close();
@@ -153,22 +162,39 @@ export function SessionClient({
     sessionChannelRef.current = null;
     mediaRef.current = null;
     pendingCandidatesRef.current = [];
+  }, []);
+
+  const stopSession = useCallback(() => {
+    leavingRef.current = true;
+    releaseResources();
     setLocalStream(null);
     setRemoteStream(null);
     setPresence({ P01: false, P02: false });
     setSpotlightTask(EMPTY_SPOTLIGHT_LIVE_TASK);
     setSpotlightPositions(DEFAULT_SPOTLIGHT_POSITIONS);
     setPhase("disconnected");
-  }, []);
+  }, [releaseResources]);
 
-  useEffect(() => stopSession, [stopSession]);
+  useEffect(
+    () => () => {
+      leavingRef.current = true;
+      releaseResources();
+    },
+    [releaseResources],
+  );
 
   const joinSession = async (preferences: MediaPreferences = mediaPreferences) => {
-    if (!/^[A-Z0-9]{6}$/.test(code)) {
+    if (!/^[A-HJ-NP-Z2-9]{6}$/.test(code)) {
       setError("Enter the six-character session code from your invitation.");
       return;
     }
+    if (token.length < 20) {
+      setError("Open your private participant invitation, or enter its access token.");
+      return;
+    }
 
+    leavingRef.current = true;
+    releaseResources();
     leavingRef.current = false;
     setError("");
     setNotice("");
@@ -178,14 +204,50 @@ export function SessionClient({
       let media: ConditionedMedia | null = null;
       if (preferences.camera || preferences.microphone) {
         try {
-          const rawStream = await navigator.mediaDevices.getUserMedia({
-            video: preferences.camera
-              ? { width: { ideal: 1280 }, height: { ideal: 720 } }
-              : false,
-            audio: preferences.microphone
-              ? { echoCancellation: true, noiseSuppression: true }
-              : false,
-          });
+          const videoConstraints = {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          };
+          const audioConstraints = {
+            echoCancellation: true,
+            noiseSuppression: true,
+          };
+          let rawStream: MediaStream;
+          try {
+            rawStream = await navigator.mediaDevices.getUserMedia({
+              video: preferences.camera ? videoConstraints : false,
+              audio: preferences.microphone ? audioConstraints : false,
+            });
+          } catch (combinedError) {
+            if (!(preferences.camera && preferences.microphone)) {
+              throw combinedError;
+            }
+            const tracks: MediaStreamTrack[] = [];
+            const unavailable: string[] = [];
+            try {
+              const video = await navigator.mediaDevices.getUserMedia({
+                video: videoConstraints,
+                audio: false,
+              });
+              tracks.push(...video.getVideoTracks());
+            } catch {
+              unavailable.push("camera");
+            }
+            try {
+              const audio = await navigator.mediaDevices.getUserMedia({
+                video: false,
+                audio: audioConstraints,
+              });
+              tracks.push(...audio.getAudioTracks());
+            } catch {
+              unavailable.push("microphone");
+            }
+            if (!tracks.length) throw combinedError;
+            rawStream = new MediaStream(tracks);
+            setNotice(
+              `Joined with partial media. Your ${unavailable.join(" and ")} could not be started.`,
+            );
+          }
           media = await createConditionedMedia(rawStream);
         } catch (permissionError) {
           const blocked =
@@ -209,7 +271,7 @@ export function SessionClient({
       const microphoneAvailable = Boolean(media?.stream.getAudioTracks().length);
 
       const peer = new RTCPeerConnection({
-        iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+        iceServers,
       });
       peerRef.current = peer;
       media?.stream.getTracks().forEach((track) => peer.addTrack(track, media.stream));
@@ -235,11 +297,36 @@ export function SessionClient({
         if (event.candidate) sendSignal({ candidate: event.candidate.toJSON() });
       };
       peer.onconnectionstatechange = () => {
-        if (peer.connectionState === "connected") setPhase("connected");
-        if (["failed", "disconnected", "closed"].includes(peer.connectionState) && !leavingRef.current) {
-          setPhase("disconnected");
+        if (peer.connectionState === "connected") {
+          if (connectionTimerRef.current !== null) {
+            window.clearTimeout(connectionTimerRef.current);
+            connectionTimerRef.current = null;
+          }
+          setError("");
+          setPhase("connected");
+        } else if (
+          peer.connectionState === "disconnected" &&
+          !leavingRef.current
+        ) {
+          setPhase("connecting");
+          setNotice("The peer connection was interrupted. Attempting to recover…");
+        } else if (
+          peer.connectionState === "failed" &&
+          !leavingRef.current
+        ) {
+          setError(
+            "The peer connection failed. Leave and rejoin, or ask the researcher to verify TURN relay configuration.",
+          );
+          setPhase("error");
         }
       };
+      connectionTimerRef.current = window.setTimeout(() => {
+        if (peer.connectionState !== "connected" && !leavingRef.current) {
+          setError(
+            "The other participant is present, but the peer connection has not completed. A restrictive network may require TURN relay access.",
+          );
+        }
+      }, 20_000);
 
       let monitorCandidates: RTCIceCandidateInit[] = [];
       const sendMonitorSignal = (
@@ -257,7 +344,7 @@ export function SessionClient({
         monitorPeerRef.current?.close();
         monitorCandidates = [];
         const monitorPeer = new RTCPeerConnection({
-          iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+          iceServers,
         });
         monitorPeerRef.current = monitorPeer;
         media.stream
@@ -299,9 +386,11 @@ export function SessionClient({
         }
       };
 
-      const socket = new WebSocket(
-        `${getWebSocketUrl()}/ws/${code}?role=participant&participant=${participant}`,
-      );
+      const socketUrl = new URL(`${getWebSocketUrl()}/ws/${code}`);
+      socketUrl.searchParams.set("role", "participant");
+      socketUrl.searchParams.set("participant", participant);
+      socketUrl.searchParams.set("token", token);
+      const socket = new WebSocket(socketUrl);
       socketRef.current = socket;
       setPhase("connecting");
 
@@ -322,13 +411,11 @@ export function SessionClient({
               microphone: microphoneAvailable,
             }),
           );
-          if (message.presence[peerParticipant]) setPhase("connected");
           if (participant === "P01" && message.presence.P02) {
             window.setTimeout(() => void makeOffer(), 0);
           }
         } else if (message.type === "presence") {
           setPresence(message.presence);
-          if (message.presence[peerParticipant]) setPhase("connected");
           if (participant === "P01" && message.participant === "P02" && message.connected) {
             window.setTimeout(() => void makeOffer(), 0);
           }
@@ -358,8 +445,25 @@ export function SessionClient({
           setError(message.message);
         }
       };
-      socket.onclose = () => {
-        if (!leavingRef.current) setPhase("disconnected");
+      socket.onclose = (event) => {
+        if (leavingRef.current) return;
+        leavingRef.current = true;
+        releaseResources();
+        setLocalStream(null);
+        setRemoteStream(null);
+        setPresence({ P01: false, P02: false });
+        setPhase(event.code === 4403 || event.code === 4409 ? "error" : "disconnected");
+        if (event.code === 4403) {
+          setError("This participant invitation is invalid or has expired.");
+        } else if (event.code === 4409) {
+          setError(
+            `${participant} is already connected. Use the other participant invitation.`,
+          );
+        } else if (event.code === 4410) {
+          setError("This session has expired.");
+        } else {
+          setNotice("The live session disconnected. You can safely rejoin.");
+        }
       };
       socket.onerror = () => {
         setError("Could not connect to the live session service.");
@@ -369,11 +473,13 @@ export function SessionClient({
       window.history.replaceState(
         {},
         "",
-        `/session?code=${code}&participant=${participant}`,
+        `/session?code=${code}&participant=${participant}&token=${encodeURIComponent(token)}`,
       );
     } catch (joinError) {
-      mediaRef.current?.stop();
-      peerRef.current?.close();
+      leavingRef.current = true;
+      releaseResources();
+      setLocalStream(null);
+      setRemoteStream(null);
       setPhase("error");
       setError(
         joinError instanceof Error
@@ -471,6 +577,7 @@ export function SessionClient({
                 <input
                   value={code}
                   maxLength={6}
+                  readOnly={invitationLocked}
                   onChange={(event) => setCode(event.target.value.toUpperCase())}
                   className="rounded-xl bg-bg-soft px-3 py-2.5 font-mono text-sm uppercase tracking-[0.15em]"
                 />
@@ -479,12 +586,30 @@ export function SessionClient({
                 Participant
                 <select
                   value={participant}
+                  disabled={invitationLocked}
                   onChange={(event) => setParticipant(event.target.value as ParticipantId)}
-                  className="rounded-xl bg-bg-soft px-3 py-2.5 text-sm"
+                  className="rounded-xl bg-bg-soft px-3 py-2.5 text-sm disabled:cursor-not-allowed disabled:opacity-70"
                 >
                   <option value="P01">P01</option>
                   <option value="P02">P02</option>
                 </select>
+              </label>
+              <label className="grid gap-1.5 text-xs font-semibold text-ink sm:col-span-2">
+                Private invitation token
+                <input
+                  type="password"
+                  value={token}
+                  maxLength={128}
+                  readOnly={invitationLocked}
+                  autoComplete="off"
+                  onChange={(event) => setToken(event.target.value.trim())}
+                  className="rounded-xl bg-bg-soft px-3 py-2.5 font-mono text-sm disabled:cursor-not-allowed"
+                />
+                <span className="font-normal text-ink-muted">
+                  {invitationLocked
+                    ? "This role is locked to the private link you received."
+                    : "Use the token included in the participant invitation URL."}
+                </span>
               </label>
             </div>
             <fieldset className="mt-5">
@@ -566,7 +691,7 @@ export function SessionClient({
                   </p>
                   <p data-testid="connection-status" className="mt-1 text-sm text-ink-muted">
                     {phase === "requesting" && "Requesting media access…"}
-                    {phase === "connecting" && `Waiting for ${peerParticipant}…`}
+                    {phase === "connecting" && `Establishing a secure peer connection with ${peerParticipant}…`}
                     {phase === "connected" && `Connected to ${peerParticipant}`}
                   </p>
                 </div>
