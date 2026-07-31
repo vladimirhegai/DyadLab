@@ -43,7 +43,9 @@ export async function generateMetadata(): Promise<Metadata> {
         ? "http"
         : "https";
   const metadataBase = new URL(`${protocol}://${host}`);
-  const socialImage = new URL("/og.png", metadataBase).toString();
+  // Filename is versioned: social scrapers cache preview images by URL, so a
+  // new artwork needs a new path to invalidate previously scraped previews.
+  const socialImage = new URL("/og-v2.png", metadataBase).toString();
 
   return {
     title,
@@ -57,9 +59,9 @@ export async function generateMetadata(): Promise<Metadata> {
       images: [
         {
           url: socialImage,
-          width: 1733,
-          height: 907,
-          alt: "DyadLab researcher dashboard with two participant tiles and an event timeline",
+          width: 1200,
+          height: 630,
+          alt: "DyadLab: two participant spotlights overlapping on a shared target object, beside a session event log",
         },
       ],
     },
