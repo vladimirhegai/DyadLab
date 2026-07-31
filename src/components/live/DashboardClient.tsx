@@ -16,11 +16,14 @@ import {
 import { getBackendUrl, getWebSocketUrl } from "@/lib/live/config";
 import {
   EMPTY_CONDITIONS,
+  EMPTY_MEDIA_STATE,
   EMPTY_PRESENCE,
   EMPTY_SPOTLIGHT_LIVE_TASK,
   type ConditionState,
   type CreatedSession,
   type LiveSpotlightTaskState,
+  type MediaState,
+  type ParticipantMedia,
   type PresenceState,
   type ServerMessage,
   type SessionSnapshot,
@@ -38,6 +41,108 @@ function ConnectionPill({ connected }: { connected: boolean }) {
       <span className={`h-1.5 w-1.5 rounded-full ${connected ? "bg-accent" : "bg-ink-muted/40"}`} />
       {connected ? "Connected" : "Waiting"}
     </span>
+  );
+}
+
+function MediaAvailability({
+  media,
+}: {
+  media: ParticipantMedia;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      <span
+        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+          media.camera ? "bg-accent-soft text-accent-strong" : "bg-black/[0.05] text-ink-muted"
+        }`}
+      >
+        Camera {media.camera ? "on" : "off"}
+      </span>
+      <span
+        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+          media.microphone ? "bg-accent-soft text-accent-strong" : "bg-black/[0.05] text-ink-muted"
+        }`}
+      >
+        Mic {media.microphone ? "on" : "off"}
+      </span>
+    </div>
+  );
+}
+
+function ResearcherMediaTile({
+  participant,
+  connected,
+  media,
+  stream,
+  condition,
+}: {
+  participant: ParticipantId;
+  connected: boolean;
+  media: ParticipantMedia;
+  stream: MediaStream | null;
+  condition: VideoCondition;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const hasVideoTrack = Boolean(stream?.getVideoTracks().length);
+  const hasAudioTrack = Boolean(stream?.getAudioTracks().length);
+
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.srcObject = stream;
+  }, [stream]);
+
+  return (
+    <div data-testid={`${participant.toLowerCase()}-researcher-feed`} className="overflow-hidden rounded-xl bg-ink">
+      <div className="relative flex aspect-video items-center justify-center">
+        {stream && (hasVideoTrack || hasAudioTrack) && (
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            className={
+              hasVideoTrack && media.camera && condition !== "disabled"
+                ? "absolute inset-0 h-full w-full object-cover"
+                : "absolute h-px w-px opacity-0"
+            }
+          />
+        )}
+        {!connected ? (
+          <div className="grid justify-items-center gap-2 text-white/65">
+            <span className="h-2.5 w-2.5 rounded-full bg-white/25" />
+            <span className="text-xs font-medium">Waiting for {participant}</span>
+          </div>
+        ) : !media.camera || condition === "disabled" ? (
+          <div className="grid justify-items-center gap-2 px-4 text-center text-white/70">
+            <span className="grid h-11 w-11 place-items-center rounded-full bg-white/10 text-sm font-semibold">
+              {participant}
+            </span>
+            <span className="text-xs font-medium">
+              {condition === "disabled"
+                ? "Video disabled by researcher"
+                : media.microphone
+                  ? "Joined with audio only"
+                  : "Joined without camera"}
+            </span>
+          </div>
+        ) : !stream ? (
+          <div className="grid justify-items-center gap-2 text-white/65">
+            <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-magenta" />
+            <span className="text-xs font-medium">Connecting preview…</span>
+          </div>
+        ) : null}
+        <div className="absolute left-2.5 top-2.5 rounded-md bg-black/55 px-2 py-1 text-[10px] font-semibold text-white">
+          {participant}
+        </div>
+        {condition !== "normal" && (
+          <div className="absolute right-2.5 top-2.5 rounded-md bg-accent/90 px-2 py-1 text-[10px] font-semibold text-white">
+            {VIDEO_CONDITIONS.find((item) => item.value === condition)?.label}
+          </div>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 bg-[#1b1024] px-3 py-2">
+        <ConnectionPill connected={connected} />
+        <MediaAvailability media={media} />
+      </div>
+    </div>
   );
 }
 
@@ -78,46 +183,52 @@ function ParticipantControls({
   participant,
   state,
   connected,
+  media,
   onCondition,
   onSelfView,
 }: {
   participant: ParticipantId;
   state: ConditionState[ParticipantId];
   connected: boolean;
+  media: ParticipantMedia;
   onCondition: (participant: ParticipantId, condition: VideoCondition) => void;
   onSelfView: (participant: ParticipantId, hidden: boolean) => void;
 }) {
   return (
-    <div className="rounded-2xl bg-bg-soft p-4">
+    <div className="rounded-xl bg-bg-soft p-3">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-ink">{participant}</p>
-          <p className="text-xs text-ink-muted">Video and self-view conditions</p>
+          <p className="text-xs text-ink-muted">
+            {media.camera ? "Video condition" : "No camera available"}
+          </p>
         </div>
         <ConnectionPill connected={connected} />
       </div>
-      <div className="flex flex-wrap gap-1.5">
-        {VIDEO_CONDITIONS.map((condition) => (
-          <Button
-            key={condition.value}
-            size="sm"
-            variant={
-              condition.value === "disabled" && state.videoCondition === "disabled"
-                ? "warn"
-                : "secondary"
+      <div className="grid gap-2">
+        <label className="grid gap-1 text-[11px] font-semibold text-ink-muted">
+          Outgoing video
+          <select
+            value={state.videoCondition}
+            disabled={!connected || !media.camera}
+            data-testid={`${participant.toLowerCase()}-condition-select`}
+            onChange={(event) =>
+              onCondition(participant, event.target.value as VideoCondition)
             }
-            active={state.videoCondition === condition.value}
-            disabled={!connected}
-            data-testid={`${participant.toLowerCase()}-${condition.value}`}
-            onClick={() => onCondition(participant, condition.value)}
+            className="min-h-10 rounded-lg bg-surface px-3 text-xs font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {condition.label}
-          </Button>
-        ))}
+            {VIDEO_CONDITIONS.map((condition) => (
+              <option key={condition.value} value={condition.value}>
+                {condition.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <Button
           size="sm"
+          variant="ghost"
           active={state.selfViewHidden}
-          disabled={!connected}
+          disabled={!connected || !media.camera}
           onClick={() => onSelfView(participant, !state.selfViewHidden)}
         >
           {state.selfViewHidden ? "Show Self-View" : "Hide Self-View"}
@@ -132,6 +243,10 @@ export function DashboardClient({ initialCode }: { initialCode?: string }) {
   const [code, setCode] = useState(initialCode?.toUpperCase() ?? "");
   const [presence, setPresence] = useState<PresenceState>(EMPTY_PRESENCE);
   const [conditions, setConditions] = useState<ConditionState>(EMPTY_CONDITIONS);
+  const [mediaState, setMediaState] = useState<MediaState>(EMPTY_MEDIA_STATE);
+  const [monitorStreams, setMonitorStreams] = useState<
+    Record<ParticipantId, MediaStream | null>
+  >({ P01: null, P02: null });
   const [spotlightTask, setSpotlightTask] = useState<LiveSpotlightTaskState>(EMPTY_SPOTLIGHT_LIVE_TASK);
   const [spotlightPositions, setSpotlightPositions] =
     useState<SpotlightPositions>(DEFAULT_SPOTLIGHT_POSITIONS);
@@ -139,6 +254,14 @@ export function DashboardClient({ initialCode }: { initialCode?: string }) {
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
+  const monitorPeersRef = useRef<Record<ParticipantId, RTCPeerConnection | null>>({
+    P01: null,
+    P02: null,
+  });
+  const monitorCandidatesRef = useRef<Record<ParticipantId, RTCIceCandidateInit[]>>({
+    P01: [],
+    P02: [],
+  });
   const origin = useSyncExternalStore(
     () => () => undefined,
     () => window.location.origin,
@@ -159,6 +282,8 @@ export function DashboardClient({ initialCode }: { initialCode?: string }) {
     if (!code) return;
     let disposed = false;
     let reconnectTimer: number | undefined;
+    const monitorPeers = monitorPeersRef.current;
+    const monitorCandidates = monitorCandidatesRef.current;
 
     const loadSession = async () => {
       try {
@@ -174,6 +299,7 @@ export function DashboardClient({ initialCode }: { initialCode?: string }) {
         if (disposed) return;
         setPresence(snapshot.presence);
         setConditions(snapshot.conditions);
+        setMediaState(snapshot.mediaState ?? EMPTY_MEDIA_STATE);
         setSpotlightTask(snapshot.spotlightTask ?? EMPTY_SPOTLIGHT_LIVE_TASK);
         setSpotlightPositions(snapshot.spotlightPositions ?? DEFAULT_SPOTLIGHT_POSITIONS);
         setEvents(persistedEvents);
@@ -189,17 +315,125 @@ export function DashboardClient({ initialCode }: { initialCode?: string }) {
       const socket = new WebSocket(`${getWebSocketUrl()}/ws/${code}?role=researcher`);
       socketRef.current = socket;
 
+      const closeMonitor = (participant: ParticipantId) => {
+        monitorPeersRef.current[participant]?.close();
+        monitorPeersRef.current[participant] = null;
+        monitorCandidatesRef.current[participant] = [];
+        setMonitorStreams((current) => ({ ...current, [participant]: null }));
+      };
+      const requestMonitor = (participant: ParticipantId) => {
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: "request_monitor_stream", participant }));
+        }
+      };
+      const handleMonitorSignal = async (
+        participant: ParticipantId,
+        payload: {
+          description?: RTCSessionDescriptionInit;
+          candidate?: RTCIceCandidateInit;
+        },
+      ) => {
+        let peer = monitorPeersRef.current[participant];
+        if (payload.description?.type === "offer") {
+          closeMonitor(participant);
+          peer = new RTCPeerConnection({
+            iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+          });
+          monitorPeersRef.current[participant] = peer;
+          peer.ontrack = (trackEvent) => {
+            const stream = trackEvent.streams[0];
+            if (stream) {
+              setMonitorStreams((current) => ({ ...current, [participant]: stream }));
+            } else {
+              setMonitorStreams((current) => {
+                const next = current[participant] ?? new MediaStream();
+                next.addTrack(trackEvent.track);
+                return { ...current, [participant]: next };
+              });
+            }
+          };
+          peer.onicecandidate = (candidateEvent) => {
+            if (candidateEvent.candidate && socket.readyState === WebSocket.OPEN) {
+              socket.send(
+                JSON.stringify({
+                  type: "monitor_signal",
+                  target: participant,
+                  payload: { candidate: candidateEvent.candidate.toJSON() },
+                }),
+              );
+            }
+          };
+          peer.onconnectionstatechange = () => {
+            if (["failed", "closed"].includes(peer?.connectionState ?? "")) {
+              closeMonitor(participant);
+            }
+          };
+        }
+        if (!peer) {
+          if (payload.candidate) {
+            monitorCandidatesRef.current[participant].push(payload.candidate);
+          }
+          return;
+        }
+        if (payload.description) {
+          await peer.setRemoteDescription(payload.description);
+          for (const candidate of monitorCandidatesRef.current[participant]) {
+            await peer.addIceCandidate(candidate);
+          }
+          monitorCandidatesRef.current[participant] = [];
+          const answer = await peer.createAnswer();
+          await peer.setLocalDescription(answer);
+          if (peer.localDescription && socket.readyState === WebSocket.OPEN) {
+            socket.send(
+              JSON.stringify({
+                type: "monitor_signal",
+                target: participant,
+                payload: { description: peer.localDescription.toJSON() },
+              }),
+            );
+          }
+        } else if (payload.candidate) {
+          if (peer.remoteDescription) {
+            await peer.addIceCandidate(payload.candidate);
+          } else {
+            monitorCandidatesRef.current[participant].push(payload.candidate);
+          }
+        }
+      };
+
       socket.onmessage = (event) => {
         const message = JSON.parse(event.data) as ServerMessage;
         if (message.type === "welcome") {
           setPresence(message.presence);
           setConditions(message.conditions);
+          setMediaState(message.mediaState ?? EMPTY_MEDIA_STATE);
           setSpotlightTask(message.spotlightTask ?? EMPTY_SPOTLIGHT_LIVE_TASK);
           setSpotlightPositions(message.spotlightPositions ?? DEFAULT_SPOTLIGHT_POSITIONS);
+          PARTICIPANTS.forEach((participant) => {
+            if (
+              message.presence[participant] &&
+              (message.mediaState?.[participant].camera ||
+                message.mediaState?.[participant].microphone)
+            ) {
+              requestMonitor(participant);
+            }
+          });
         } else if (message.type === "presence") {
           setPresence(message.presence);
+          if (!message.connected) closeMonitor(message.participant);
         } else if (message.type === "condition_state") {
           setConditions(message.conditions);
+        } else if (message.type === "media_state") {
+          setMediaState(message.mediaState);
+          if (message.camera || message.microphone) {
+            requestMonitor(message.participant);
+          } else {
+            closeMonitor(message.participant);
+          }
+        } else if (message.type === "monitor_signal" && message.from !== "researcher") {
+          void handleMonitorSignal(message.from, message.payload).catch(() => {
+            closeMonitor(message.from as ParticipantId);
+          });
         } else if (message.type === "spotlight_task_state") {
           setSpotlightTask(message.task);
         } else if (message.type === "spotlight_position") {
@@ -235,6 +469,11 @@ export function DashboardClient({ initialCode }: { initialCode?: string }) {
       if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer);
       socketRef.current?.close();
       socketRef.current = null;
+      PARTICIPANTS.forEach((participant) => {
+        monitorPeers[participant]?.close();
+        monitorPeers[participant] = null;
+        monitorCandidates[participant] = [];
+      });
     };
   }, [backendUrl, code]);
 
@@ -253,6 +492,8 @@ export function DashboardClient({ initialCode }: { initialCode?: string }) {
       setEvents([]);
       setPresence(EMPTY_PRESENCE);
       setConditions(EMPTY_CONDITIONS);
+      setMediaState(EMPTY_MEDIA_STATE);
+      setMonitorStreams({ P01: null, P02: null });
       setSpotlightTask(EMPTY_SPOTLIGHT_LIVE_TASK);
       setSpotlightPositions(DEFAULT_SPOTLIGHT_POSITIONS);
       window.history.replaceState({}, "", `/dashboard?code=${session.code}`);
@@ -282,6 +523,9 @@ export function DashboardClient({ initialCode }: { initialCode?: string }) {
   const setSelfView = (participant: ParticipantId, hidden: boolean) => {
     send({ type: "set_self_view", participant, hidden });
   };
+  const bothParticipantsConnected = PARTICIPANTS.every(
+    (participant) => presence[participant],
+  );
 
   return (
     <>
@@ -338,8 +582,8 @@ export function DashboardClient({ initialCode }: { initialCode?: string }) {
             <ol className="mt-4 grid gap-4">
               {[
                 "Two private links are generated — one per participant.",
-                "Each participant joins with their own camera and microphone.",
-                "You control video conditions and watch the task live.",
+                "Camera and microphone are recommended, but participants may join without either.",
+                "You monitor focus, media availability, and structured events live.",
               ].map((step, i) => (
                 <li key={step} className="flex items-start gap-3">
                   <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent-soft font-display text-[12px] font-semibold text-accent-strong">
@@ -352,44 +596,34 @@ export function DashboardClient({ initialCode }: { initialCode?: string }) {
           </aside>
           </div>
         ) : (
-          <div className="mt-8 grid gap-6">
-            <section className="card-surface p-5">
+          <div className="mt-6 grid gap-5">
+            <section className="card-surface px-4 py-3 md:px-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-                    Participant access
-                  </p>
-                  <p className="mt-1 text-sm text-ink-muted">Share each link with exactly one participant.</p>
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="text-xs font-semibold text-ink">Participant access</span>
+                  <span className="text-xs text-ink-muted">
+                    {bothParticipantsConnected
+                      ? "Both participants are connected."
+                      : "Share one private link with each participant."}
+                  </span>
                 </div>
                 <Button size="sm" variant="ghost" onClick={createSession} disabled={creating}>
                   New session
                 </Button>
               </div>
-              {links && (
-                <div className="mt-4 grid gap-3">
+              {links && !bothParticipantsConnected && (
+                <div className="mt-3 grid gap-2 border-t border-border pt-3">
                   <CopyableLink participant="P01" url={links.P01} />
                   <CopyableLink participant="P02" url={links.P02} />
                 </div>
               )}
             </section>
 
-            <div className="grid gap-6 lg:grid-cols-[1fr_310px]">
-              <div className="grid gap-6">
-                <section className="card-surface p-5">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-                        Spotlight Sync
-                      </p>
-                      <p className="mt-1 text-sm text-ink-muted">
-                        {spotlightTask.status === "idle" &&
-                          `${spotlightTask.roundCount} rounds of cooperative visual search.`}
-                        {spotlightTask.status === "active" &&
-                          `Round ${spotlightTask.currentRoundIndex + 1} of ${spotlightTask.roundCount} · ${spotlightTask.stats.hits} shared finds.`}
-                        {spotlightTask.status === "completed" &&
-                          `${spotlightTask.stats.hits} of ${spotlightTask.roundCount} shared targets found.`}
-                      </p>
-                    </div>
+            <section className="card-surface p-4 md:p-5">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-base font-semibold text-ink">Spotlight Sync controls</h2>
                     <span
                       data-testid="spotlight-task-status"
                       className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
@@ -403,122 +637,137 @@ export function DashboardClient({ initialCode }: { initialCode?: string }) {
                       {spotlightTask.status}
                     </span>
                   </div>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <Button
-                      size="sm"
-                      variant="primary"
-                      disabled={spotlightTask.status === "active"}
-                      data-testid="start-spotlight-task"
-                      onClick={() => send({ type: "spotlight_task_control", action: "start" })}
-                    >
-                      Start Spotlight Sync
-                    </Button>
-                    <Button
-                      size="sm"
-                      disabled={spotlightTask.status !== "active"}
-                      onClick={() => send({ type: "spotlight_task_control", action: "stop" })}
-                    >
-                      Stop
-                    </Button>
+                  <p className="mt-1 text-xs text-ink-muted">
+                    {spotlightTask.status === "active"
+                      ? `Round ${spotlightTask.currentRoundIndex + 1} of ${spotlightTask.roundCount} · ${spotlightTask.stats.hits} shared finds`
+                      : bothParticipantsConnected
+                        ? `${spotlightTask.roundCount} cooperative visual-search rounds ready`
+                        : "Waiting for both participants before the task can begin"}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    disabled={spotlightTask.status === "active" || !bothParticipantsConnected}
+                    data-testid="start-spotlight-task"
+                    onClick={() => send({ type: "spotlight_task_control", action: "start" })}
+                  >
+                    Start task
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={spotlightTask.status !== "active"}
+                    onClick={() => send({ type: "spotlight_task_control", action: "stop" })}
+                  >
+                    Stop
+                  </Button>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-4 border-t border-border pt-4 sm:grid-cols-2">
+                <fieldset>
+                  <legend className="text-[11px] font-semibold text-ink-muted">Scene context</legend>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {(["rich", "reduced"] as SpotlightContextMode[]).map((mode) => (
+                      <Button
+                        key={mode}
+                        size="sm"
+                        active={spotlightTask.contextMode === mode}
+                        aria-pressed={spotlightTask.contextMode === mode}
+                        onClick={() => send({ type: "set_spotlight_context", mode })}
+                      >
+                        {mode === "rich" ? "Rich scene" : "Reduced"}
+                      </Button>
+                    ))}
                   </div>
-                  <div className="mt-4 grid gap-4 border-t border-border pt-4 sm:grid-cols-2">
-                    <fieldset>
-                      <legend className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-                        Scene context
-                      </legend>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {(["rich", "reduced"] as SpotlightContextMode[]).map((mode) => (
-                          <Button
-                            key={mode}
-                            size="sm"
-                            active={spotlightTask.contextMode === mode}
-                            aria-pressed={spotlightTask.contextMode === mode}
-                            onClick={() => send({ type: "set_spotlight_context", mode })}
-                          >
-                            {mode === "rich" ? "Rich scene" : "Reduced"}
-                          </Button>
-                        ))}
-                      </div>
-                    </fieldset>
-                    <fieldset>
-                      <legend className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-                        Outcome feedback
-                      </legend>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {(["warm", "neutral"] as SpotlightFeedbackMode[]).map((mode) => (
-                          <Button
-                            key={mode}
-                            size="sm"
-                            active={spotlightTask.feedbackMode === mode}
-                            aria-pressed={spotlightTask.feedbackMode === mode}
-                            onClick={() => send({ type: "set_spotlight_feedback", mode })}
-                          >
-                            {mode === "warm" ? "Warm" : "Neutral"}
-                          </Button>
-                        ))}
-                      </div>
-                    </fieldset>
+                </fieldset>
+                <fieldset>
+                  <legend className="text-[11px] font-semibold text-ink-muted">Outcome feedback</legend>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {(["warm", "neutral"] as SpotlightFeedbackMode[]).map((mode) => (
+                      <Button
+                        key={mode}
+                        size="sm"
+                        active={spotlightTask.feedbackMode === mode}
+                        aria-pressed={spotlightTask.feedbackMode === mode}
+                        onClick={() => send({ type: "set_spotlight_feedback", mode })}
+                      >
+                        {mode === "warm" ? "Warm" : "Neutral"}
+                      </Button>
+                    ))}
+                  </div>
+                </fieldset>
+              </div>
+            </section>
+
+            <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+              <SpotlightResearchMonitor task={spotlightTask} positions={spotlightPositions} />
+
+              <aside className="grid gap-5">
+                <section className="card-surface p-4">
+                  <h2 className="text-sm font-semibold text-ink">Participant feeds</h2>
+                  <p className="mt-1 text-xs text-ink-muted">
+                    Live previews appear only when participants grant media access.
+                  </p>
+                  <div className="mt-4 grid gap-3">
+                    {PARTICIPANTS.map((participant) => (
+                      <ResearcherMediaTile
+                        key={participant}
+                        participant={participant}
+                        connected={presence[participant]}
+                        media={mediaState[participant]}
+                        stream={monitorStreams[participant]}
+                        condition={conditions[participant].videoCondition}
+                      />
+                    ))}
+                  </div>
+                  <div className="mt-4 grid gap-3">
+                    {PARTICIPANTS.map((participant) => (
+                      <ParticipantControls
+                        key={participant}
+                        participant={participant}
+                        state={conditions[participant]}
+                        connected={presence[participant]}
+                        media={mediaState[participant]}
+                        onCondition={setCondition}
+                        onSelfView={setSelfView}
+                      />
+                    ))}
                   </div>
                 </section>
-
-                <SpotlightResearchMonitor task={spotlightTask} positions={spotlightPositions} />
 
                 <EventTimeline
                   events={events}
                   exportPrefix={`dyadlab-${code}-live-events`}
-                  emptyMessage="Waiting for live session events…"
+                  emptyMessage="Waiting for participant and task events…"
+                  bodyClassName="h-72"
+                  compact
                 />
-
-                <section className="card-surface flex flex-wrap items-center justify-between gap-4 p-5">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-                      Server-backed data
-                    </p>
-                    <p className="mt-1 text-sm text-ink-muted">
-                      Download the complete persisted event log, including events from before a reconnect.
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <ButtonLink
-                      size="sm"
-                      variant="secondary"
-                      href={`${backendUrl}/sessions/${code}/events.csv`}
-                    >
-                      Download CSV
-                    </ButtonLink>
-                    <ButtonLink
-                      size="sm"
-                      variant="secondary"
-                      href={`${backendUrl}/sessions/${code}/events.json`}
-                    >
-                      Download JSON
-                    </ButtonLink>
-                  </div>
-                </section>
-              </div>
-
-              <aside className="card-surface h-fit p-5">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-                  Live conditions
-                </p>
-                <div className="mt-4 grid gap-3">
-                  {PARTICIPANTS.map((participant) => (
-                    <ParticipantControls
-                      key={participant}
-                      participant={participant}
-                      state={conditions[participant]}
-                      connected={presence[participant]}
-                      onCondition={setCondition}
-                      onSelfView={setSelfView}
-                    />
-                  ))}
-                </div>
-                <p className="mt-4 text-xs leading-relaxed text-ink-muted">
-                  Blur, grayscale, and frame-rate conditions are applied on the participant&apos;s device before
-                  the video track is sent to their peer.
-                </p>
               </aside>
             </div>
+
+            <section className="flex flex-wrap items-center justify-between gap-4 border-t border-border px-1 pt-4">
+              <p className="max-w-2xl text-xs leading-relaxed text-ink-muted">
+                Media is peer-to-peer and never recorded. The persisted log contains presence,
+                media availability, researcher conditions, focus positions, and task outcomes.
+              </p>
+              <div className="flex gap-2">
+                <ButtonLink
+                  size="sm"
+                  variant="secondary"
+                  href={`${backendUrl}/sessions/${code}/events.csv`}
+                >
+                  Download CSV
+                </ButtonLink>
+                <ButtonLink
+                  size="sm"
+                  variant="secondary"
+                  href={`${backendUrl}/sessions/${code}/events.json`}
+                >
+                  Download JSON
+                </ButtonLink>
+              </div>
+            </section>
           </div>
         )}
       </div>

@@ -67,6 +67,81 @@ def test_condition_change_is_pushed_and_persisted(tmp_path):
         assert events[-1]["value"] == "blurred (P01)"
 
 
+def test_optional_media_state_and_researcher_monitor_signaling(tmp_path):
+    app = create_app(tmp_path / "test.db")
+
+    with TestClient(app) as client:
+        code = client.post("/sessions", json={}).json()["code"]
+
+        with client.websocket_connect(f"/ws/{code}?role=researcher") as researcher:
+            welcome = researcher.receive_json()
+            assert welcome["mediaState"]["P01"] == {
+                "camera": False,
+                "microphone": False,
+            }
+
+            with client.websocket_connect(
+                f"/ws/{code}?role=participant&participant=P01"
+            ) as participant:
+                participant_welcome = participant.receive_json()
+                assert participant_welcome["mediaState"]["P01"] == {
+                    "camera": False,
+                    "microphone": False,
+                }
+                receive_until(researcher, "presence")
+
+                participant.send_json(
+                    {
+                        "type": "media_state",
+                        "camera": False,
+                        "microphone": False,
+                    }
+                )
+                media_state = receive_until(researcher, "media_state")
+                assert media_state["participant"] == "P01"
+                assert media_state["camera"] is False
+                assert media_state["microphone"] is False
+
+                researcher.send_json(
+                    {"type": "request_monitor_stream", "participant": "P01"}
+                )
+                assert receive_until(participant, "monitor_requested") == {
+                    "type": "monitor_requested"
+                }
+
+                participant.send_json(
+                    {
+                        "type": "monitor_signal",
+                        "payload": {
+                            "description": {"type": "offer", "sdp": "test-offer"}
+                        },
+                    }
+                )
+                offer = receive_until(researcher, "monitor_signal")
+                assert offer["from"] == "P01"
+                assert offer["payload"]["description"]["type"] == "offer"
+
+                researcher.send_json(
+                    {
+                        "type": "monitor_signal",
+                        "target": "P01",
+                        "payload": {
+                            "description": {"type": "answer", "sdp": "test-answer"}
+                        },
+                    }
+                )
+                answer = receive_until(participant, "monitor_signal")
+                assert answer["from"] == "researcher"
+                assert answer["payload"]["description"]["type"] == "answer"
+
+        events = client.get(f"/sessions/{code}/events").json()
+        assert [event["type"] for event in events] == [
+            "joined_session",
+            "media_state",
+        ]
+        assert events[-1]["value"] == "camera=off,microphone=off"
+
+
 def test_signal_sync_is_private_and_server_authoritative(tmp_path):
     app = create_app(tmp_path / "test.db")
 

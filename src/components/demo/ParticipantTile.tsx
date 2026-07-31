@@ -26,6 +26,8 @@ export function ParticipantTile({
 }) {
   const { videoCondition, selfViewHidden, connected } = state;
   const videoRef = useRef<HTMLVideoElement>(null);
+  const hasVideo = Boolean(stream?.getVideoTracks().length);
+  const hasAudio = Boolean(stream?.getAudioTracks().length);
   const filter =
     videoCondition === "blurred"
       ? "blur(6px)"
@@ -55,7 +57,7 @@ export function ParticipantTile({
           </svg>
           <span className="text-xs font-medium">Video disabled</span>
         </div>
-      ) : stream ? (
+      ) : hasVideo ? (
         <video
           ref={videoRef}
           autoPlay
@@ -64,14 +66,30 @@ export function ParticipantTile({
           className="h-full w-full object-cover"
         />
       ) : (
-        <div
-          className={`flex h-14 w-14 items-center justify-center rounded-full text-sm font-semibold text-white transition-[filter] duration-200 ${
-            videoCondition === "reducedFrameRate" ? "" : "animate-breathe"
-          }`}
-          style={{ background: TINTS[id], filter }}
-        >
-          {id}
-        </div>
+        <>
+          {hasAudio && (
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted={isSelfView}
+              className="absolute h-px w-px opacity-0"
+            />
+          )}
+          <div
+            className={`flex h-14 w-14 items-center justify-center rounded-full text-sm font-semibold text-white transition-[filter] duration-200 ${
+              videoCondition === "reducedFrameRate" ? "" : "animate-breathe"
+            }`}
+            style={{ background: TINTS[id], filter }}
+          >
+            {id}
+          </div>
+          {connected && (
+            <span className="mt-2 text-[10px] font-medium text-white/55">
+              {hasAudio ? "Audio only" : "No media shared"}
+            </span>
+          )}
+        </>
       )}
 
       {!connected && (
@@ -80,7 +98,7 @@ export function ParticipantTile({
         </div>
       )}
 
-      {!stream && connected && !selfViewHidden && videoCondition !== "disabled" && (
+      {!hasVideo && connected && !selfViewHidden && videoCondition !== "disabled" && (
         <div
           className="absolute bottom-2 right-2 h-8 w-11 rounded border border-white/20"
           style={{ background: TINTS[id], filter, opacity: 0.85 }}

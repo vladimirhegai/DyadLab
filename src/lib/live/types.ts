@@ -15,6 +15,11 @@ export interface ParticipantCondition {
 
 export type ConditionState = Record<ParticipantId, ParticipantCondition>;
 export type PresenceState = Record<ParticipantId, boolean>;
+export interface ParticipantMedia {
+  camera: boolean;
+  microphone: boolean;
+}
+export type MediaState = Record<ParticipantId, ParticipantMedia>;
 
 export type LiveTaskState = SignalTaskState;
 export type LiveSpotlightTaskState = SpotlightTaskState;
@@ -34,6 +39,7 @@ export interface SessionSnapshot {
   event_count: number;
   presence: PresenceState;
   conditions: ConditionState;
+  mediaState: MediaState;
   task: LiveTaskState;
   spotlightTask?: LiveSpotlightTaskState;
   spotlightPositions?: SpotlightPositions;
@@ -47,6 +53,7 @@ export type ServerMessage =
       participant: ParticipantId | null;
       presence: PresenceState;
       conditions: ConditionState;
+      mediaState: MediaState;
       task: LiveTaskState;
       spotlightTask?: LiveSpotlightTaskState;
       spotlightPositions?: SpotlightPositions;
@@ -70,6 +77,13 @@ export type ServerMessage =
   | {
       type: "condition_state";
       conditions: ConditionState;
+    }
+  | {
+      type: "media_state";
+      participant: ParticipantId;
+      camera: boolean;
+      microphone: boolean;
+      mediaState: MediaState;
     }
   | {
       type: "task_state";
@@ -97,11 +111,26 @@ export type ServerMessage =
       };
     }
   | {
+      type: "monitor_requested";
+    }
+  | {
+      type: "monitor_signal";
+      from: ParticipantId | "researcher";
+      payload: {
+        description?: RTCSessionDescriptionInit;
+        candidate?: RTCIceCandidateInit;
+      };
+    }
+  | {
       type: "error";
       message: string;
     };
 
 export const EMPTY_PRESENCE: PresenceState = { P01: false, P02: false };
+export const EMPTY_MEDIA_STATE: MediaState = {
+  P01: { camera: false, microphone: false },
+  P02: { camera: false, microphone: false },
+};
 
 export const EMPTY_CONDITIONS: ConditionState = {
   P01: { videoCondition: "normal", selfViewHidden: false },

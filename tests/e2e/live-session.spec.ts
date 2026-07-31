@@ -29,11 +29,22 @@ test("two participants complete a researcher-controlled live session", async ({
     await p01.getByTestId("join-session").click();
     await p02.getByTestId("join-session").click();
 
-    await expect(dashboard.getByText("Connected", { exact: true })).toHaveCount(2);
+    await expect(
+      dashboard.getByTestId("p01-researcher-feed").getByText("Connected", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      dashboard.getByTestId("p02-researcher-feed").getByText("Connected", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      dashboard.getByTestId("p01-researcher-feed").getByText("Camera on", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      dashboard.getByTestId("p02-researcher-feed").locator("video"),
+    ).toBeVisible({ timeout: 20000 });
     await expect(p01.getByTestId("connection-status")).toContainText("Connected to P02");
     await expect(p02.getByTestId("connection-status")).toContainText("Connected to P01");
 
-    await dashboard.getByTestId("p01-blurred").click();
+    await dashboard.getByTestId("p01-condition-select").selectOption("blurred");
     await expect(p01.getByText("Blur enabled", { exact: true }).first()).toBeVisible();
 
     await dashboard.getByTestId("start-spotlight-task").click();
@@ -50,7 +61,7 @@ test("two participants complete a researcher-controlled live session", async ({
       if (index < spotlightTargets.length - 1) {
         await expect(
           dashboard.getByText(`Round ${index + 2} of ${spotlightTargets.length}`, {
-            exact: false,
+            exact: true,
           }),
         ).toBeVisible({ timeout: 20000 });
       }
@@ -68,6 +79,56 @@ test("two participants complete a researcher-controlled live session", async ({
     expect((await exportResponse.text()).split("\n")[0]).toBe(
       '"timestamp","participant","event","value"',
     );
+  } finally {
+    await Promise.all([
+      dashboardContext.close(),
+      p01Context.close(),
+      p02Context.close(),
+    ]);
+  }
+});
+
+test("participants can join without camera or microphone", async ({ browser }) => {
+  const dashboardContext = await browser.newContext({
+    baseURL: "http://127.0.0.1:3000",
+  });
+  const p01Context = await browser.newContext({
+    baseURL: "http://127.0.0.1:3000",
+  });
+  const p02Context = await browser.newContext({
+    baseURL: "http://127.0.0.1:3000",
+  });
+
+  try {
+    const dashboard = await dashboardContext.newPage();
+    await dashboard.goto("/dashboard");
+    await dashboard.getByTestId("create-session").click();
+
+    const p01Link = await dashboard.getByTestId("p01-link").inputValue();
+    const p02Link = await dashboard.getByTestId("p02-link").inputValue();
+    const p01 = await p01Context.newPage();
+    const p02 = await p02Context.newPage();
+    await p01.goto(p01Link);
+    await p02.goto(p02Link);
+    await p01.getByTestId("join-without-media").click();
+    await p02.getByTestId("join-without-media").click();
+
+    await expect(
+      dashboard.getByTestId("p01-researcher-feed").getByText("Camera off", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      dashboard.getByTestId("p02-researcher-feed").getByText("Mic off", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      dashboard.getByText("Both participants are connected.", { exact: true }),
+    ).toBeVisible();
+    await expect(dashboard.getByTestId("start-spotlight-task")).toBeEnabled();
+    await expect(p01.getByTestId("connection-status")).toContainText("Connected to P02");
+    await expect(p02.getByTestId("connection-status")).toContainText("Connected to P01");
+
+    await dashboard.getByTestId("start-spotlight-task").click();
+    await expect(p01.getByTestId("participant-spotlight-task-status")).toHaveText("active");
+    await expect(p02.getByTestId("participant-spotlight-task-status")).toHaveText("active");
   } finally {
     await Promise.all([
       dashboardContext.close(),

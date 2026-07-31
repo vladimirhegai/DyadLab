@@ -449,6 +449,16 @@ body {
   --sl-stage-vh: max(16rem, calc(100svh - 22.5rem));
 }
 
+.researcher-focus-stage {
+  --sl-stage-vh: 44rem;
+  max-width: 100%;
+}
+
+.researcher-focus-stage .sl-stage {
+  cursor: default;
+  border-radius: 0.85rem;
+}
+
 .sl-stage {
   --sl-beam: 9rem;
   --sl-p1x: 30%;

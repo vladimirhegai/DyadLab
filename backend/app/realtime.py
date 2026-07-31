@@ -389,6 +389,15 @@ class SessionRuntime:
     self_view_hidden: dict[str, bool] = field(
         default_factory=lambda: {"P01": False, "P02": False}
     )
+    participant_media: dict[str, dict[str, bool]] = field(
+        default_factory=lambda: {
+            "P01": {"camera": False, "microphone": False},
+            "P02": {"camera": False, "microphone": False},
+        }
+    )
+    media_reported: dict[str, bool] = field(
+        default_factory=lambda: {"P01": False, "P02": False}
+    )
     task: TaskRuntime = field(default_factory=TaskRuntime)
     spotlight_task: SpotlightTaskRuntime = field(default_factory=SpotlightTaskRuntime)
     spotlight_positions: dict[str, dict[str, float] | None] = field(
@@ -411,6 +420,12 @@ class SessionRuntime:
                 "videoCondition": self.conditions[participant],
                 "selfViewHidden": self.self_view_hidden[participant],
             }
+            for participant in PARTICIPANTS
+        }
+
+    def media_state(self) -> dict[str, dict[str, bool]]:
+        return {
+            participant: dict(self.participant_media[participant])
             for participant in PARTICIPANTS
         }
 
@@ -616,6 +631,7 @@ class ConnectionManager:
                 "participant": participant,
                 "presence": runtime.presence(),
                 "conditions": runtime.condition_state(),
+                "mediaState": runtime.media_state(),
                 "task": runtime.task.public(participant if role == "participant" else None),
                 "spotlightTask": runtime.spotlight_task.public(
                     participant if role == "participant" else None
@@ -654,6 +670,12 @@ class ConnectionManager:
             elif participant:
                 runtime.participants[participant].discard(websocket)
                 disconnected = not runtime.participants[participant]
+                if disconnected:
+                    runtime.participant_media[participant] = {
+                        "camera": False,
+                        "microphone": False,
+                    }
+                    runtime.media_reported[participant] = False
         if disconnected and participant:
             await self.broadcast(
                 runtime,
@@ -662,6 +684,16 @@ class ConnectionManager:
                     "participant": participant,
                     "connected": False,
                     "presence": runtime.presence(),
+                },
+            )
+            await self.broadcast_researchers(
+                runtime,
+                {
+                    "type": "media_state",
+                    "participant": participant,
+                    "camera": False,
+                    "microphone": False,
+                    "mediaState": runtime.media_state(),
                 },
             )
 
@@ -738,6 +770,99 @@ class ConnectionManager:
         message: dict[str, Any],
     ) -> None:
         message_type = message.get("type")
+        if message_type == "media_state" and role == "participant" and participant:
+            camera = message.get("camera")
+            microphone = message.get("microphone")
+            if not isinstance(camera, bool) or not isinstance(microphone, bool):
+                await websocket.send_json(
+                    {"type": "error", "message": "Invalid media state"}
+                )
+                return
+            async with runtime.lock:
+                previous = runtime.participant_media[participant]
+                first_report = not runtime.media_reported[participant]
+                changed = previous != {
+                    "camera": camera,
+                    "microphone": microphone,
+                }
+                runtime.participant_media[participant] = {
+                    "camera": camera,
+                    "microphone": microphone,
+                }
+                runtime.media_reported[participant] = True
+                event = (
+                    self.database.record_event(
+                        runtime.code,
+                        participant,
+                        "media_state",
+                        (
+                            f"camera={'on' if camera else 'off'},"
+                            f"microphone={'on' if microphone else 'off'}"
+                        ),
+                    )
+                    if first_report or changed
+                    else None
+                )
+            await self.broadcast_researchers(
+                runtime,
+                {
+                    "type": "media_state",
+                    "participant": participant,
+                    "camera": camera,
+                    "microphone": microphone,
+                    "mediaState": runtime.media_state(),
+                },
+            )
+            if event:
+                await self.broadcast_researchers(
+                    runtime, {"type": "event", "event": event}
+                )
+            return
+        if message_type == "request_monitor_stream" and role == "researcher":
+            target = message.get("participant")
+            if target not in PARTICIPANTS:
+                await websocket.send_json(
+                    {"type": "error", "message": "Invalid monitor target"}
+                )
+                return
+            await self.send_to_participant(
+                runtime, target, {"type": "monitor_requested"}
+            )
+            return
+        if message_type == "monitor_signal":
+            payload = message.get("payload")
+            if not isinstance(payload, dict):
+                await websocket.send_json(
+                    {"type": "error", "message": "Invalid monitor signaling message"}
+                )
+                return
+            if role == "participant" and participant:
+                await self.broadcast_researchers(
+                    runtime,
+                    {
+                        "type": "monitor_signal",
+                        "from": participant,
+                        "payload": payload,
+                    },
+                )
+                return
+            if role == "researcher":
+                target = message.get("target")
+                if target not in PARTICIPANTS:
+                    await websocket.send_json(
+                        {"type": "error", "message": "Invalid monitor target"}
+                    )
+                    return
+                await self.send_to_participant(
+                    runtime,
+                    target,
+                    {
+                        "type": "monitor_signal",
+                        "from": "researcher",
+                        "payload": payload,
+                    },
+                )
+                return
         if message_type == "signal" and role == "participant" and participant:
             target = message.get("target")
             payload = message.get("payload")
@@ -1360,6 +1485,7 @@ class ConnectionManager:
             "event_count": session["event_count"],
             "presence": runtime.presence(),
             "conditions": runtime.condition_state(),
+            "mediaState": runtime.media_state(),
             "task": runtime.task.public(),
             "spotlightTask": runtime.spotlight_task.public(),
             "spotlightPositions": dict(runtime.spotlight_positions),

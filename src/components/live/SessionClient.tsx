@@ -21,6 +21,7 @@ import {
 } from "@/lib/live/types";
 
 type Phase = "ready" | "requesting" | "connecting" | "connected" | "disconnected" | "error";
+type MediaPreferences = { camera: boolean; microphone: boolean };
 
 const CONDITION_LABEL: Record<VideoCondition, string> = {
   normal: "Normal video",
@@ -53,6 +54,11 @@ export function SessionClient({
   const [participant, setParticipant] = useState<ParticipantId>(initialParticipant ?? "P01");
   const [phase, setPhase] = useState<Phase>("ready");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [mediaPreferences, setMediaPreferences] = useState<MediaPreferences>({
+    camera: true,
+    microphone: true,
+  });
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [presence, setPresence] = useState<PresenceState>({ P01: false, P02: false });
@@ -65,6 +71,8 @@ export function SessionClient({
   const [processingSupported, setProcessingSupported] = useState(true);
   const socketRef = useRef<WebSocket | null>(null);
   const peerRef = useRef<RTCPeerConnection | null>(null);
+  const monitorPeerRef = useRef<RTCPeerConnection | null>(null);
+  const sessionChannelRef = useRef<RTCDataChannel | null>(null);
   const mediaRef = useRef<ConditionedMedia | null>(null);
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
   const leavingRef = useRef(false);
@@ -136,9 +144,13 @@ export function SessionClient({
     leavingRef.current = true;
     socketRef.current?.close();
     peerRef.current?.close();
+    monitorPeerRef.current?.close();
+    sessionChannelRef.current?.close();
     mediaRef.current?.stop();
     socketRef.current = null;
     peerRef.current = null;
+    monitorPeerRef.current = null;
+    sessionChannelRef.current = null;
     mediaRef.current = null;
     pendingCandidatesRef.current = [];
     setLocalStream(null);
@@ -151,7 +163,7 @@ export function SessionClient({
 
   useEffect(() => stopSession, [stopSession]);
 
-  const joinSession = async () => {
+  const joinSession = async (preferences: MediaPreferences = mediaPreferences) => {
     if (!/^[A-Z0-9]{6}$/.test(code)) {
       setError("Enter the six-character session code from your invitation.");
       return;
@@ -159,23 +171,55 @@ export function SessionClient({
 
     leavingRef.current = false;
     setError("");
+    setNotice("");
     setPhase("requesting");
 
     try {
-      const rawStream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: { echoCancellation: true, noiseSuppression: true },
-      });
-      const media = await createConditionedMedia(rawStream);
+      let media: ConditionedMedia | null = null;
+      if (preferences.camera || preferences.microphone) {
+        try {
+          const rawStream = await navigator.mediaDevices.getUserMedia({
+            video: preferences.camera
+              ? { width: { ideal: 1280 }, height: { ideal: 720 } }
+              : false,
+            audio: preferences.microphone
+              ? { echoCancellation: true, noiseSuppression: true }
+              : false,
+          });
+          media = await createConditionedMedia(rawStream);
+        } catch (permissionError) {
+          const blocked =
+            permissionError instanceof DOMException &&
+            ["NotAllowedError", "SecurityError"].includes(permissionError.name);
+          setNotice(
+            blocked
+              ? "Camera or microphone access was blocked. You joined without media; the researcher can see that those devices are unavailable."
+              : "Camera or microphone could not be started. You joined without media and can still complete the activity.",
+          );
+        }
+      } else {
+        setNotice(
+          "You joined without camera or microphone. The researcher can see your media status.",
+        );
+      }
       mediaRef.current = media;
-      setLocalStream(media.stream);
-      setProcessingSupported(media.processingSupported);
+      setLocalStream(media?.stream ?? null);
+      setProcessingSupported(media?.processingSupported ?? true);
+      const cameraAvailable = Boolean(media?.stream.getVideoTracks().length);
+      const microphoneAvailable = Boolean(media?.stream.getAudioTracks().length);
 
       const peer = new RTCPeerConnection({
         iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
       });
       peerRef.current = peer;
-      media.stream.getTracks().forEach((track) => peer.addTrack(track, media.stream));
+      media?.stream.getTracks().forEach((track) => peer.addTrack(track, media.stream));
+      if (participant === "P01") {
+        sessionChannelRef.current = peer.createDataChannel("session");
+      } else {
+        peer.ondatachannel = (event) => {
+          sessionChannelRef.current = event.channel;
+        };
+      }
       peer.ontrack = (event) => {
         if (event.streams[0]) {
           setRemoteStream(event.streams[0]);
@@ -197,6 +241,64 @@ export function SessionClient({
         }
       };
 
+      let monitorCandidates: RTCIceCandidateInit[] = [];
+      const sendMonitorSignal = (
+        payload: {
+          description?: RTCSessionDescriptionInit;
+          candidate?: RTCIceCandidateInit;
+        },
+      ) => {
+        if (socketRef.current?.readyState === WebSocket.OPEN) {
+          socketRef.current.send(JSON.stringify({ type: "monitor_signal", payload }));
+        }
+      };
+      const startMonitorStream = async () => {
+        if (!media?.stream.getTracks().length) return;
+        monitorPeerRef.current?.close();
+        monitorCandidates = [];
+        const monitorPeer = new RTCPeerConnection({
+          iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+        });
+        monitorPeerRef.current = monitorPeer;
+        media.stream
+          .getTracks()
+          .forEach((track) => monitorPeer.addTrack(track, media.stream));
+        monitorPeer.onicecandidate = (event) => {
+          if (event.candidate) {
+            sendMonitorSignal({ candidate: event.candidate.toJSON() });
+          }
+        };
+        const offer = await monitorPeer.createOffer();
+        await monitorPeer.setLocalDescription(offer);
+        if (monitorPeer.localDescription) {
+          sendMonitorSignal({
+            description: monitorPeer.localDescription.toJSON(),
+          });
+        }
+      };
+      const handleMonitorSignal = async (
+        payload: {
+          description?: RTCSessionDescriptionInit;
+          candidate?: RTCIceCandidateInit;
+        },
+      ) => {
+        const monitorPeer = monitorPeerRef.current;
+        if (!monitorPeer) return;
+        if (payload.description) {
+          await monitorPeer.setRemoteDescription(payload.description);
+          for (const candidate of monitorCandidates) {
+            await monitorPeer.addIceCandidate(candidate);
+          }
+          monitorCandidates = [];
+        } else if (payload.candidate) {
+          if (monitorPeer.remoteDescription) {
+            await monitorPeer.addIceCandidate(payload.candidate);
+          } else {
+            monitorCandidates.push(payload.candidate);
+          }
+        }
+      };
+
       const socket = new WebSocket(
         `${getWebSocketUrl()}/ws/${code}?role=participant&participant=${participant}`,
       );
@@ -212,12 +314,21 @@ export function SessionClient({
           const participantCondition = message.conditions[participant];
           setCondition(participantCondition.videoCondition);
           setSelfViewHidden(participantCondition.selfViewHidden);
-          media.setCondition(participantCondition.videoCondition);
+          media?.setCondition(participantCondition.videoCondition);
+          socket.send(
+            JSON.stringify({
+              type: "media_state",
+              camera: cameraAvailable,
+              microphone: microphoneAvailable,
+            }),
+          );
+          if (message.presence[peerParticipant]) setPhase("connected");
           if (participant === "P01" && message.presence.P02) {
             window.setTimeout(() => void makeOffer(), 0);
           }
         } else if (message.type === "presence") {
           setPresence(message.presence);
+          if (message.presence[peerParticipant]) setPhase("connected");
           if (participant === "P01" && message.participant === "P02" && message.connected) {
             window.setTimeout(() => void makeOffer(), 0);
           }
@@ -225,7 +336,7 @@ export function SessionClient({
           void handleSignal(message);
         } else if (message.type === "condition_change" && message.participant === participant) {
           setCondition(message.condition);
-          media.setCondition(message.condition);
+          media?.setCondition(message.condition);
         } else if (message.type === "self_view_change" && message.participant === participant) {
           setSelfViewHidden(message.hidden);
         } else if (message.type === "spotlight_task_state") {
@@ -235,6 +346,14 @@ export function SessionClient({
             ...current,
             [message.participant]: message.point,
           }));
+        } else if (message.type === "monitor_requested") {
+          void startMonitorStream().catch(() => {
+            setNotice("The researcher preview could not be started, but your session is still connected.");
+          });
+        } else if (message.type === "monitor_signal" && message.from === "researcher") {
+          void handleMonitorSignal(message.payload).catch(() => {
+            setNotice("The researcher preview was interrupted, but your session is still connected.");
+          });
         } else if (message.type === "error") {
           setError(message.message);
         }
@@ -289,8 +408,13 @@ export function SessionClient({
   };
 
   const ownState = useMemo(
-    () => participantState(Boolean(localStream), condition, selfViewHidden),
-    [condition, localStream, selfViewHidden],
+    () =>
+      participantState(
+        phase === "connecting" || phase === "connected",
+        condition,
+        selfViewHidden,
+      ),
+    [condition, phase, selfViewHidden],
   );
   const peerState = useMemo(
     () => participantState(presence[peerParticipant], "normal", false),
@@ -326,15 +450,20 @@ export function SessionClient({
             {error}
           </div>
         )}
+        {notice && (
+          <div role="status" className="mt-6 rounded-xl bg-accent-soft px-4 py-3 text-sm text-accent-strong">
+            {notice}
+          </div>
+        )}
 
         {phase === "ready" || phase === "error" || phase === "disconnected" ? (
           <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_320px]">
           <section className="card-surface p-6 md:p-8">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Before joining</p>
-            <h2 className="mt-2 text-xl font-semibold text-ink">Camera and microphone permission</h2>
+            <h2 className="mt-2 text-xl font-semibold text-ink">Choose how you join</h2>
             <p className="mt-3 text-sm leading-relaxed text-ink-muted">
-              Your audio and video are sent directly to the other participant. DyadLab stores behavioral
-              task events and condition changes, not the media stream.
+              Camera and microphone are recommended, not required. Granted media is sent to the other
+              participant and the researcher&apos;s live monitor; DyadLab does not record or store it.
             </p>
             <div className="mt-5 grid gap-4 sm:grid-cols-[1fr_150px]">
               <label className="grid gap-1.5 text-xs font-semibold text-ink">
@@ -358,20 +487,62 @@ export function SessionClient({
                 </select>
               </label>
             </div>
-            <Button
-              className="mt-6"
-              variant="primary"
-              data-testid="join-session"
-              onClick={joinSession}
-            >
-              Join with camera and microphone
-            </Button>
+            <fieldset className="mt-5">
+              <legend className="text-xs font-semibold text-ink">
+                Media for this session <span className="font-normal text-ink-muted">· recommended</span>
+              </legend>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                {([
+                  ["camera", "Camera", "Share video"],
+                  ["microphone", "Microphone", "Share audio"],
+                ] as const).map(([key, label, detail]) => (
+                  <label
+                    key={key}
+                    className="flex min-h-12 cursor-pointer items-center gap-3 rounded-xl bg-bg-soft px-3 py-2.5"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={mediaPreferences[key]}
+                      onChange={(event) =>
+                        setMediaPreferences((current) => ({
+                          ...current,
+                          [key]: event.target.checked,
+                        }))
+                      }
+                      className="h-4 w-4 accent-accent"
+                    />
+                    <span>
+                      <span className="block text-sm font-semibold text-ink">{label}</span>
+                      <span className="block text-[11px] text-ink-muted">{detail}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <div className="mt-6 flex flex-wrap gap-2">
+              <Button
+                variant="primary"
+                data-testid="join-session"
+                onClick={() => void joinSession()}
+              >
+                Join session
+              </Button>
+              {(mediaPreferences.camera || mediaPreferences.microphone) && (
+                <Button
+                  variant="ghost"
+                  data-testid="join-without-media"
+                  onClick={() => void joinSession({ camera: false, microphone: false })}
+                >
+                  Join without media
+                </Button>
+              )}
+            </div>
           </section>
           <aside className="card-surface p-6">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">What to expect</p>
             <ol className="mt-4 grid gap-4">
               {[
-                "You'll see yourself and the other participant once you both join.",
+                "You'll see the other participant once you both join. Your own preview appears when your camera is on.",
                 "The researcher may change your video condition at any time.",
                 "A short collaborative task starts when the researcher begins it.",
               ].map((step, i) => (
