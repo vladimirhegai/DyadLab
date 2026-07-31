@@ -1,4 +1,35 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+async function expectRemoteVideoPlaying(page: Page, participant: "P01" | "P02") {
+  const video = page
+    .getByTestId(`${participant.toLowerCase()}-participant-tile`)
+    .locator("video");
+  await expect(video).toBeVisible();
+
+  const readState = () =>
+    video.evaluate((element) => {
+      const media = element as HTMLVideoElement;
+      const stream = media.srcObject as MediaStream | null;
+      const track = stream?.getVideoTracks()[0];
+      return {
+        currentTime: media.currentTime,
+        readyState: media.readyState,
+        videoWidth: media.videoWidth,
+        trackMuted: track?.muted ?? true,
+        trackReadyState: track?.readyState ?? "ended",
+      };
+    });
+
+  const before = await readState();
+  await page.waitForTimeout(700);
+  const after = await readState();
+
+  expect(after.readyState).toBeGreaterThanOrEqual(2);
+  expect(after.videoWidth).toBeGreaterThan(0);
+  expect(after.trackReadyState).toBe("live");
+  expect(after.trackMuted).toBe(false);
+  expect(after.currentTime).toBeGreaterThan(before.currentTime);
+}
 
 async function expectClueNearOwnSpotlight(
   page: import("@playwright/test").Page,
@@ -77,9 +108,24 @@ test("two participants complete a researcher-controlled live session", async ({
     ).toBeVisible({ timeout: 20000 });
     await expect(p01.getByTestId("connection-status")).toContainText("Connected to P02");
     await expect(p02.getByTestId("connection-status")).toContainText("Connected to P01");
+    await expectRemoteVideoPlaying(p02, "P01");
 
-    await dashboard.getByTestId("p01-condition-select").selectOption("blurred");
-    await expect(p01.getByText("Blur enabled", { exact: true }).first()).toBeVisible();
+    const conditionLabels = {
+      blurred: "Blur enabled",
+      grayscale: "Grayscale enabled",
+      reducedFrameRate: "Reduced to approximately 6 fps",
+    } as const;
+    for (const [condition, label] of Object.entries(conditionLabels)) {
+      await dashboard.getByTestId("p01-condition-select").selectOption(condition);
+      await expect(p01.getByText(label, { exact: true }).first()).toBeVisible();
+      await expectRemoteVideoPlaying(p02, "P01");
+    }
+
+    await dashboard.getByTestId("p01-condition-select").selectOption("disabled");
+    await expect(p01.getByText("Video disabled", { exact: true }).first()).toBeVisible();
+    await dashboard.getByTestId("p01-condition-select").selectOption("normal");
+    await expect(p01.getByText("Normal video", { exact: true }).first()).toBeVisible();
+    await expectRemoteVideoPlaying(p02, "P01");
 
     await dashboard.getByTestId("start-spotlight-task").click();
     await expect(p01.getByTestId("participant-spotlight-task-status")).toHaveText("active");

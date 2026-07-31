@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useRef } from "react";
 import type { ParticipantState, ParticipantId } from "@/lib/demo/types";
 
 const TINTS: Record<ParticipantId, string> = { P01: "#7a0f8c", P02: "#d31c77" };
@@ -35,16 +35,21 @@ export function ParticipantTile({
         ? "grayscale(1)"
         : undefined;
 
-  useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.srcObject = stream ?? null;
-    }
-  }, [stream]);
+  const attachVideo = useCallback(
+    (element: HTMLVideoElement | null) => {
+      videoRef.current = element;
+      if (element) element.srcObject = stream ?? null;
+    },
+    [stream],
+  );
 
   const hideLiveSelfView = Boolean(stream && isSelfView && selfViewHidden);
 
   return (
-    <div className="relative flex aspect-video flex-1 flex-col items-center justify-center overflow-hidden rounded-2xl bg-ink">
+    <div
+      data-testid={`${id.toLowerCase()}-participant-tile`}
+      className="relative flex aspect-video flex-1 flex-col items-center justify-center overflow-hidden rounded-2xl bg-ink"
+    >
       {hideLiveSelfView ? (
         <div className="flex flex-col items-center gap-2 text-white/70">
           <span className="text-xs font-medium">Self-view hidden</span>
@@ -59,7 +64,7 @@ export function ParticipantTile({
         </div>
       ) : hasVideo ? (
         <video
-          ref={videoRef}
+          ref={attachVideo}
           autoPlay
           playsInline
           muted={isSelfView}
@@ -69,7 +74,7 @@ export function ParticipantTile({
         <>
           {hasAudio && (
             <video
-              ref={videoRef}
+              ref={attachVideo}
               autoPlay
               playsInline
               muted={isSelfView}

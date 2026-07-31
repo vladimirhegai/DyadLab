@@ -45,10 +45,26 @@ export async function createConditionedMedia(rawStream: MediaStream): Promise<Co
     };
   }
 
-  const processedStream = canvas.captureStream(0);
-  const processedVideoTrack = processedStream.getVideoTracks()[0] as MediaStreamTrack & {
-    requestFrame?: () => void;
-  };
+  // A zero-rate canvas stream depends entirely on `requestFrame()`, which is
+  // not implemented consistently enough across browsers for a live call. A
+  // capped stream remains live while the drawing loop controls whether new
+  // content arrives at 30 fps or at the reduced 6 fps condition.
+  const processedStream = canvas.captureStream(30);
+  const processedVideoTrack = processedStream.getVideoTracks()[0];
+  if (!processedVideoTrack) {
+    return {
+      stream: rawStream,
+      processingSupported: false,
+      setCondition: (condition) => {
+        rawVideoTrack.enabled = condition !== "disabled";
+      },
+      stop: () => {
+        video.srcObject = null;
+        rawStream.getTracks().forEach((track) => track.stop());
+      },
+    };
+  }
+  processedVideoTrack.contentHint = "motion";
   const outputStream = new MediaStream([processedVideoTrack, ...rawStream.getAudioTracks()]);
 
   let condition: VideoCondition = "normal";
@@ -57,16 +73,17 @@ export async function createConditionedMedia(rawStream: MediaStream): Promise<Co
 
   const drawFrame = () => {
     if (stopped) return;
-    context.save();
-    context.filter =
-      condition === "blurred"
-        ? "blur(10px)"
-        : condition === "grayscale"
-          ? "grayscale(1)"
-          : "none";
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
-    context.restore();
-    processedVideoTrack.requestFrame?.();
+    if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+      context.save();
+      context.filter =
+        condition === "blurred"
+          ? "blur(10px)"
+          : condition === "grayscale"
+            ? "grayscale(1)"
+            : "none";
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      context.restore();
+    }
 
     const framesPerSecond = condition === "reducedFrameRate" ? 6 : 30;
     frameTimer = window.setTimeout(drawFrame, 1000 / framesPerSecond);
@@ -78,13 +95,16 @@ export async function createConditionedMedia(rawStream: MediaStream): Promise<Co
     stream: outputStream,
     processingSupported: true,
     setCondition: (nextCondition) => {
+      if (condition === nextCondition) return;
       condition = nextCondition;
       processedVideoTrack.enabled = nextCondition !== "disabled";
+      if (frameTimer !== undefined) window.clearTimeout(frameTimer);
+      drawFrame();
     },
     stop: () => {
       stopped = true;
       if (frameTimer !== undefined) window.clearTimeout(frameTimer);
-      processedVideoTrack.stop();
+      processedStream.getTracks().forEach((track) => track.stop());
       rawStream.getTracks().forEach((track) => track.stop());
       video.srcObject = null;
     },
